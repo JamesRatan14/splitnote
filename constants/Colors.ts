@@ -1,0 +1,41 @@
+export const Colors = {
+  dark: {
+    primary: '#00D4B8',
+    primaryLight: 'rgba(0,212,184,0.12)',
+    primaryMid: '#00D4B8',
+    primaryDark: '#00A896',
+    background: '#080B12',
+    surface: '#0F1520',
+    surfaceHigh: '#151D2E',
+    border: 'rgba(255,255,255,0.07)',
+    borderLight: 'rgba(255,255,255,0.13)',
+    text: '#E8EDF2',
+    textSecondary: '#4A5568',
+    danger: '#FF5C5C',
+    dangerLight: 'rgba(255,92,92,0.12)',
+    success: '#00D4B8',
+    pending: '#F59E0B',
+    pendingLight: 'rgba(245,158,11,0.12)',
+  },
+  light: {
+    primary: '#00A896',
+    primaryLight: 'rgba(0,168,150,0.10)',
+    primaryMid: '#007A6E',
+    primaryDark: '#005F56',
+    background: '#F8FAFC',
+    surface: '#FFFFFF',
+    surfaceHigh: '#F1F5F9',
+    border: 'rgba(0,0,0,0.08)',
+    borderLight: 'rgba(0,0,0,0.14)',
+    text: '#0F172A',
+    textSecondary: '#64748B',
+    danger: '#EF4444',
+    dangerLight: 'rgba(239,68,68,0.10)',
+    success: '#00A896',
+    pending: '#D97706',
+    pendingLight: 'rgba(217,119,6,0.10)',
+  },
+};
+
+export type ColorScheme = keyof typeof Colors;
+export type ThemeColors = typeof Colors.dark;

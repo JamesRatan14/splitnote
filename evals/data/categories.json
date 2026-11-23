@@ -1,0 +1,16 @@
+[
+ ["Dinner at Olive Garden","Food & Drink"],["Pho with the crew","Food & Drink"],["Starbucks run","Food & Drink"],["Late night pizza","Food & Drink"],
+ ["Friday happy hour drinks","Food & Drink"],["Chick-fil-A lunch","Food & Drink"],["Birthday dinner steak","Food & Drink"],["Bagels and coffee","Food & Drink"],
+ ["Weekly grocery shopping","Groceries"],["Wegmans milk eggs bread","Groceries"],["Costco run","Groceries"],["Walmart supplies","Groceries"],
+ ["Aldi haul","Groceries"],["Fruits and vegetables","Groceries"],["Instacart order","Groceries"],["Toiletries and cleaning stuff","Groceries"],
+ ["Uber to airport","Transport"],["Lyft home","Transport"],["Gas for road trip","Transport"],["Parking downtown","Transport"],
+ ["Amtrak to NYC","Transport"],["Bus tickets","Transport"],["Taxi from station","Transport"],["Toll and fuel","Transport"],
+ ["Movie night tickets","Entertainment"],["Bowling alley","Entertainment"],["Concert tickets","Entertainment"],["Escape room booking","Entertainment"],
+ ["Spotify family plan","Entertainment"],["Karaoke night","Entertainment"],["Comedy club","Entertainment"],["Six Flags tickets","Entertainment"],
+ ["Flight to Boston","Travel"],["Hotel for weekend","Travel"],["Airbnb in Vermont","Travel"],["Cabin rental ski trip","Travel"],
+ ["Airline tickets","Travel"],["Hostel booking","Travel"],["Vacation resort deposit","Travel"],["Tour guide fee","Travel"],
+ ["Amazon order","Shopping"],["New sneakers","Shopping"],["Target run","Shopping"],["Birthday gift for Sam","Shopping"],
+ ["IKEA furniture","Shopping"],["Winter jacket","Shopping"],["Best Buy headphones","Shopping"],["Books for class","Shopping"],
+ ["Electricity bill","Utilities"],["Wifi bill","Utilities"],["Monthly rent","Utilities"],["Water and trash","Utilities"],
+ ["Phone plan","Utilities"],["Heating gas bill","Utilities"],["Laundry quarters","Utilities"],["Apartment repair fee","Utilities"]
+]

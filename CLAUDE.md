@@ -1,0 +1,261 @@
+# CLAUDE.md — SplitNote
+
+> Context file for Claude Code. Read fully before changing code. This is the single source of truth;
+> `AGENTS.md` only points here (the old ₹/UPI/SDK-51 spec is obsolete).
+> Working copy: `Expenz_1`. The original `Expenz` folder is a reference snapshot — do not edit it.
+
+---
+
+## 1. What this project is
+
+A personal, single-user app to log group expenses in seconds, then batch-enter them into Splitwise on weekends.
+Name is **SplitNote** everywhere (display name, package, slug, bundle id `com.personal.splitnote`).
+
+**Second goal (important):** the project is also the owner's AI/ML portfolio piece for job applications
+(AI/ML + SWE roles). Every AI feature must therefore be **measurable** (evals), **honest** (no inflated numbers),
+**safe** (no secrets in the client, validated model output) and **deployed** (live URL + CI).
+
+Core flow: `pay for group → open app → log (title, amount, tax, mode, friends, date) → [weekend] → enter in Splitwise → mark synced`.
+
+---
+
+## 2. Status
+
+| Area | State |
+|---|---|
+| MVP logbook (add / list / detail / mark synced / delete / backup) | Done |
+| Custom splits, tax splitting (equal / proportional / custom), USD formatting | Done |
+| On-device ML in `utils/ml/` + eval harness with CI regression gates | Done |
+| ML suggestions on the Add screen (friends, category, mode, outlier/duplicate) | Done (browser-tested) |
+| Web/PWA build; web-safe confirm dialogs | Done, browser-tested locally; **not yet deployed** (needs GitHub repo) |
+| Native iOS build for SideStore (`ios-sideload.yml`) | Workflow written + prebuild verified locally; **first CI run pending** |
+| FastAPI + Claude proxy on Vercel, "describe your expense" box | Next |
+| Receipt photo capture (vision) | Planned |
+| Eval on the owner's real expenses; README with metrics + demo GIF | Planned |
+
+---
+
+## 3. Tech stack (actual)
+
+| Layer | Choice |
+|---|---|
+| Framework | Expo SDK **54**, React Native 0.81, React 19.1, TypeScript (strict) |
+| Navigation | Expo Router 6 (file-based) |
+| Storage | AsyncStorage (localStorage on web), accessed only via `utils/storage.ts` + hooks |
+| Web | `react-native-web`, `react-dom`, `@expo/metro-runtime`; Metro bundler, `output: "single"` (SPA) |
+| Native-only modules | `expo-haptics` (no-op on web), `expo-notifications`, `expo-file-system`, `expo-sharing`, `@react-native-community/datetimepicker` |
+| AI (on-device) | Pure TypeScript in `utils/ml/` — runs on native and web |
+| AI (cloud, planned) | FastAPI on **Vercel** (serverless Python) → Claude with structured output; key lives only on the server |
+| CI/CD | GitHub Actions: web → GitHub Pages (Linux); iOS `.ipa` → GitHub Release (macOS) |
+
+Keep dependencies on SDK-54-compatible versions: run `npx expo install --check` after adding packages
+(e.g. `react-native-worklets` must stay `0.5.x` for Reanimated 4.1 — a mismatch breaks the native build).
+
+### How the app is delivered
+1. **Web app / PWA on the iPhone home screen (primary).** Free, never expires. Repo is **public**, so the URL is
+   `https://<owner>.github.io/splitnote/`. Home-screen web apps are exempt from Safari's 7-day storage cap.
+2. **Native iOS via SideStore (secondary).** `.github/workflows/ios-sideload.yml` (manual or on `v*` tag) builds an
+   **unsigned** `.ipa` on macOS, publishes it as a GitHub Release along with `source.json`. SideStore signs it on the
+   phone with a **secondary** Apple ID (free account: 7-day signing, refreshed by SideStore on-device; max 3 apps).
+   SideStore source URL: `https://github.com/<owner>/splitnote/releases/latest/download/source.json`.
+   The push entitlement (`aps-environment`, added by `expo-notifications`) is stripped in CI — free accounts can't sign it; local notifications still work.
+3. **Expo Go** only if the App Store Expo Go still supports SDK 54 (probably not). Don't rely on it.
+
+**Web and native data are separate stores.** Move data with Settings → Export / Import.
+
+---
+
+## 4. Data model (source of truth: `types/index.ts`)
+
+```ts
+type PaymentMode = 'Cash' | 'Credit Card' | 'Debit Card' | 'Zelle' | 'Apple Pay' | 'Other';
+type SyncStatus = 'pending' | 'synced';
+type SplitType = 'equal' | 'custom';
+type TaxSplitType = 'equal' | 'proportional' | 'custom';
+
+interface Transaction {
+  id: string;
+  title: string;
+  amount: number;            // PRE-TAX subtotal paid by the user (USD)
+  tax?: number;              // tax is stored separately; total = amount + tax
+  mode: PaymentMode;
+  date: string;              // 'YYYY-MM-DD'
+  participants: string[];    // friends only (never the user)
+  includeMe: boolean;        // does the payer share the cost? (form default: false)
+  splitType: SplitType;
+  customAmounts?: Record<string, number>;
+  taxSplitType?: TaxSplitType;
+  customTaxAmounts?: Record<string, number>;
+  note?: string;
+  syncStatus: SyncStatus;
+  createdAt: string;         // ISO timestamp
+}
+```
+
+Storage keys: `@splitnote/transactions_v1`, `@splitnote/known_friends_v1`. Always parse defensively (corrupt JSON must not crash).
+Do **not** change key names or rename fields without a migration — it would orphan the user's data.
+
+`useTransactions` mutations go through `mutate()`, which re-reads storage before applying the change, so a screen
+holding a stale copy can't overwrite newer data. Keep it that way for any new mutation (e.g. edit).
+
+Split math lives only in `utils/calculations.ts` (`calculateSplit`, `getPersonBreakdown`, `getTotalToCollect`, `getOwedByFriend`).
+Rounding is to 2 dp per person; accept small rounding loss, never redistribute.
+
+---
+
+## 5. AI architecture
+
+### 5.1 On-device models — `utils/ml/`
+| File | Purpose |
+|---|---|
+| `naiveBayes.ts`, `tokenize.ts` | Multinomial Naive Bayes (Laplace smoothing), tokenizer, Jaccard |
+| `categoryClassifier.ts` | `CategoryClassifier` (seeded cold-start corpus + `learn()` for personalisation); `predictPaymentMode()` learned from the user's history (needs ≥10 items) |
+| `participantRecommender.ts` | `recommendParticipants()` — recency-decayed score from title similarity, co-occurrence, weekday |
+| `anomaly.ts` | `detectAnomalies()` — median/MAD robust z-score outliers per category + duplicate detection |
+| `offlineParser.ts` | `parseExpenseOffline(text, {today, knownFriends})` — rule-based natural-language parser. **Cannot** do unequal splits or free-form phrasing — that is the LLM's job |
+| `thresholds.ts` | Confidence gates for showing hints — **shared by the UI and `evals/run.ts`** |
+| `types.ts`, `index.ts` | `ParsedExpense`, `HistoryItem`, `Category`; barrel export |
+
+Rules: no `any`; no network; no AsyncStorage access inside `utils/ml/` (callers pass history in); deterministic (inject `today`).
+Pure helpers from `utils/formatters.ts` are allowed.
+
+**In the UI:** `hooks/useExpenseSuggestions.ts` turns the draft + history into suggestions; `components/SmartHints.tsx`
+renders them on the Add screen (`CategoryHint`, `AnomalyWarnings`, `ModeHint`, `FriendSuggestions`).
+Suggestions are **never applied without a tap**; warnings never block saving.
+The category hint is display-only (category is not stored yet — storing it would be an optional `category?` field).
+
+### 5.2 LLM path (next — roadmap step 4)
+- FastAPI app in `server/`, deployed to **Vercel** (Python serverless, auto-deploys from the GitHub repo).
+  The Anthropic key is a Vercel env var only — **never** in the app bundle, repo, or anything shipped to the client.
+- **Auth:** a passphrase the owner types once in Settings (stored on-device, never in the bundle); the server rejects requests without it.
+- Set a **hard monthly spend cap** in the Anthropic console. Limit input size. No logging of expense text or receipt images.
+  Serverless = no reliable in-memory rate limiting; rely on passphrase + spend cap + size limit.
+- CORS: allow only the GitHub Pages origin and localhost.
+- Claude is called with a JSON schema mirroring `ParsedExpense`; the app **validates the response** (types, ranges, amount > 0,
+  participant count) before filling the form, and falls back to `parseExpenseOffline` on any failure/timeout/offline.
+- Receipt photos (`expo-image-picker`) → vision → same schema (items, tax, total).
+
+### 5.3 Evals — `evals/`
+- `npm run eval` prints parser field-level + exact-match accuracy, category accuracy vs majority baseline (+ hint coverage /
+  accuracy-when-shown at the UI threshold), participant recall@3 vs frequency baseline, mode accuracy vs baseline
+  (+ accuracy-when-shown), outlier precision/recall, duplicate sanity check — then a **regression-gate table**.
+  Any gate below its floor → exit code 1 → CI (and the web deploy) fails.
+- Data: `evals/data/parse_cases.json` (43 labeled phrases; `"tags":["hard"]` = needs LLM), `evals/data/categories.json` (56 held-out titles).
+- **Honesty rules (do not break):**
+  - The parser's 100% on non-hard cases is a *development-set* score (cases and rules were written together). Not real-world accuracy.
+  - Recommender / mode / anomaly numbers use *synthetic* history from a seeded generator. Label them synthetic everywhere.
+  - `CATEGORY_HINT_MIN_CONFIDENCE = 0.2` was chosen by sweeping on the same 56-title set (0.2 → shown on 89%, 92% correct when shown),
+    so that "accuracy when shown" is optimistically biased. Re-check on real data.
+  - Naive Bayes confidences are poorly calibrated (8 classes → low max-probabilities); don't present them as probabilities.
+  - Gate floors catch regressions; they are not accuracy claims.
+  - Only cite numbers measured on held-out or the owner's **real** expenses (target: ≥50 real entries) and say n.
+- When adding the LLM parser: add it as a second system in `evalParser(...)`, same cases, report accuracy + p50/p95 latency + $/request,
+  and keep the offline baseline in the table.
+
+---
+
+## 6. Web / PWA rules
+
+- **Dialogs:** never call `Alert.alert` directly — use `showAlert()` from `utils/alert.ts` (same signature). react-native-web's
+  `Alert` is a silent no-op; `showAlert` maps to `window.confirm`/`window.alert` on web and calls `onPress` synchronously
+  (needed so the web import file-picker still opens).
+- Platform splits use Metro's extension resolution: `utils/backup.ts` (native) vs `utils/backup.web.ts` (Blob download +
+  `<input type=file>`). Keep both exports identical (`exportBackup`, `importBackup`, `BackupFile`, `ImportResult`).
+- Date entry: `components/WebDateInput.tsx` on web; native keeps `@react-native-community/datetimepicker`.
+- `expo-notifications` and the 6-day backup reminder are **skipped on web** (`Platform.OS` guards in `app/_layout.tsx`, `utils/autoBackup.ts`).
+- GitHub Pages serves under `/<repo-name>`: `app.config.js` reads `EXPO_BASE_URL` (CI sets it). Locally leave it unset.
+- `app.config.js` forces `web.output = "single"`; PWA tags are injected by `scripts/postexport.js`, which also writes `dist/404.html` (SPA deep-link fallback).
+- Static assets: `public/manifest.json`, `public/apple-touch-icon.png`, `public/icon-192.png`, `public/icon-512.png`; native icon `assets/icon.png` (1024², no alpha).
+- **Data is per-origin.** Changing the site URL or repo name = empty storage. Export a backup (Settings) before any move.
+- Icon-only buttons need `accessibilityLabel` (VoiceOver, and the browser tests select by `aria-label`).
+
+---
+
+## 7. Folder structure
+
+```
+Expenz_1/
+├── CLAUDE.md                      ← this file (AGENTS.md just points here)
+├── app.json / app.config.js       ← Expo config (config.js adds web, baseUrl, CI build number)
+├── app/
+│   ├── _layout.tsx                ← root stack; notification handler is native-only
+│   ├── (tabs)/{index,synced,settings,_layout}.tsx
+│   └── transaction/{new,[id]}.tsx
+├── components/                    ← TransactionCard, SplitBreakdown, SummaryHeader, ParticipantInput, ModeSelector,
+│                                    AmountInput, EmptyState, WebDateInput, SmartHints
+├── hooks/                         ← useTransactions, useFriendSuggestions, useExpenseSuggestions
+├── utils/
+│   ├── calculations.ts  formatters.ts  storage.ts  uuid.ts  alert.ts
+│   ├── backup.ts / backup.web.ts  autoBackup.ts
+│   └── ml/                        ← on-device models (see §5.1)
+├── evals/                         ← run.ts, tsconfig.json, data/*.json
+├── scripts/postexport.js          ← PWA tags + 404.html after `expo export`
+├── scripts/sidestore-source.js    ← writes SideStore source.json in the iOS workflow
+├── assets/icon.png                ← native app icon
+├── public/                        ← web manifest + icons
+├── .github/workflows/deploy-web.yml   ← web → Pages (on push to main)
+├── .github/workflows/ios-sideload.yml ← unsigned .ipa → GitHub Release (manual / v* tag)
+├── constants/ (Colors, Layout, PaymentModes)   types/index.ts
+```
+
+`ios/` and `android/` are generated by `expo prebuild` (Continuous Native Generation) and git-ignored — change native
+config through `app.json` / `app.config.js` / config plugins, never by committing `ios/`.
+
+---
+
+## 8. Commands
+
+```bash
+npm run typecheck            # tsc --noEmit  (must be clean before every commit)
+npm run eval                 # model evals + regression gates (see §5.3)
+npx expo start --web         # local web dev
+EXPO_BASE_URL=/splitnote npm run build:web   # production web build -> dist/ (+ PWA tags, 404.html)
+npx expo install --check     # verify SDK-54-compatible dependency versions
+npx expo prebuild -p ios --no-install        # sanity-check native config (no Xcode needed); delete ios/ after
+```
+
+CI:
+- `deploy-web.yml` (Linux, on push to `main`): `npm ci` → typecheck → eval → build:web → deploy to Pages.
+  Enable once: repo Settings → Pages → Source = **GitHub Actions**.
+- `ios-sideload.yml` (macOS, manual "Run workflow" or push a `v*` tag): typecheck → prebuild → pod install →
+  strip push entitlement → unsigned `xcodebuild archive` → zip `.ipa` → GitHub Release with `SplitNote.ipa` + `source.json`.
+  Build number = `github.run_number` (`IOS_BUILD_NUMBER`), so SideStore sees each build as an update.
+  The owner's Mac has only Command Line Tools (no Xcode), so native builds are validated in CI, not locally.
+
+---
+
+## 9. Coding conventions
+
+1. TypeScript strict, **no `any`**; type every prop and return.
+2. All money math in `utils/calculations.ts`; no inline arithmetic in components (legacy exceptions remain in `new.tsx` previews — move them when touched).
+3. No hardcoded colors — `Colors[colorScheme]` from `constants/Colors.ts`; support light and dark.
+4. No direct AsyncStorage use in components — go through `useTransactions` / `useFriendSuggestions` / `storage.ts`.
+5. Currency via `formatCurrency()` (USD, en-US); dates stored as ISO strings, shown via `formatDate()`.
+6. Confirm destructive actions with `showAlert()` (works on native and web).
+7. Never mutate state; every mutation persists (via `mutate()` in `useTransactions`).
+8. Any new native-only module needs a web fallback or a `Platform.OS` guard, and must not break `build:web` or the iOS workflow.
+9. ML code stays pure and testable; every new model gets an eval (and a gate) before it is shown in the UI.
+10. No secrets in the repo. The Claude key exists only as a Vercel env var.
+
+Validation rules: title 2–80 chars; amount > 0 (cap $1,000,000); at least one participant, max 20, deduplicated case-insensitively; note ≤ 200 chars; warn but allow future dates.
+
+---
+
+## 10. Roadmap (in order)
+
+1. **Deploy web build** — create public repo `splitnote`, push, enable Pages (source: GitHub Actions), verify on iPhone Safari
+   that a transaction persists after closing/reopening; Add to Home Screen.
+2. **Native via SideStore** — run `ios-sideload.yml`, fix anything the first macOS run surfaces, install SideStore (secondary Apple ID),
+   add the source URL, install SplitNote.
+3. ~~Wire Phase-1 models into `new.tsx`~~ — done.
+4. **FastAPI proxy on Vercel + "describe your expense" box** — passphrase auth, spend cap, schema-validated, offline-parser fallback, LLM added to the eval table.
+5. **Receipt capture** — image picker → vision → same schema; extend evals with a small labeled receipt set.
+6. **Real-data eval + README** — measure on ≥50 real expenses, architecture diagram, metrics table, demo GIF, live link.
+
+## 11. Notes for Claude when working in this repo
+
+- `expo export` output (`dist/`) and `.evalbuild/` are generated and git-ignored.
+- Out of scope: direct Splitwise API integration, multi-user/cloud sync, authentication (other than the proxy passphrase).
+- SideStore safety: use a secondary Apple ID; never commit pairing files (`.gitignore` covers common names).
+
+*Last updated: 23 Nov 2026*

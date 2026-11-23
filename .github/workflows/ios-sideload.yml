@@ -1,0 +1,110 @@
+name: Build iOS app (.ipa for SideStore)
+
+# Builds an UNSIGNED .ipa on a macOS runner and publishes it as a GitHub Release.
+# SideStore signs it on the phone with your (secondary) Apple ID.
+# Run manually (Actions tab → "Run workflow") or by pushing a tag like v1.0.1.
+# macOS minutes are free on public repos.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # create the release
+
+concurrency:
+  group: ios-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      EXPO_NO_TELEMETRY: '1'
+      CI: '1'
+      IOS_BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Generate native iOS project (expo prebuild)
+        run: npx expo prebuild --platform ios --clean --no-install
+
+      - name: Install CocoaPods
+        run: cd ios && pod install
+
+      - name: Remove push-notification entitlement (not allowed for free Apple IDs)
+        run: |
+          ENT=$(ls ios/*/*.entitlements | head -1)
+          echo "Entitlements file: $ENT"
+          /usr/libexec/PlistBuddy -c "Delete :aps-environment" "$ENT" || true
+          cat "$ENT"
+
+      - name: Build unsigned archive
+        run: |
+          mkdir -p build
+          set +e
+          xcodebuild \
+            -workspace ios/SplitNote.xcworkspace \
+            -scheme SplitNote \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/SplitNote.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            archive > build/xcodebuild.log 2>&1
+          STATUS=$?
+          set -e
+          if [ $STATUS -ne 0 ]; then
+            echo "::group::xcodebuild errors"; grep -E "error:|fatal" build/xcodebuild.log | head -50 || true; echo "::endgroup::"
+            tail -n 80 build/xcodebuild.log
+            exit $STATUS
+          fi
+          tail -n 5 build/xcodebuild.log
+
+      - name: Package .ipa
+        run: |
+          APP=$(ls -d build/SplitNote.xcarchive/Products/Applications/*.app | head -1)
+          mkdir -p build/Payload
+          cp -R "$APP" build/Payload/
+          (cd build && zip -qry SplitNote.ipa Payload)
+          ls -lh build/SplitNote.ipa
+
+      - name: Write SideStore source
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          TAG: ios-build-${{ github.run_number }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          IPA_PATH: build/SplitNote.ipa
+          OUT_PATH: build/source.json
+        run: node scripts/sidestore-source.js
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=ios-build-${{ github.run_number }}
+          VERSION=$(node -p "require('./app.json').expo.version")
+          gh release create "$TAG" build/SplitNote.ipa build/source.json \
+            --title "SplitNote $VERSION (build ${{ github.run_number }})" \
+            --notes "Unsigned iOS build for SideStore. Commit ${{ github.sha }}." \
+            --target "${{ github.sha }}" --latest
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: build/xcodebuild.log
+          if-no-files-found: ignore
