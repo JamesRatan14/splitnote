@@ -39,7 +39,8 @@ const FIELDS: Field[] = ['title', 'amount', 'tax', 'mode', 'date', 'participants
 function fieldOk(f: Field, exp: Partial<ParsedExpense>, got: ParsedExpense): boolean {
   switch (f) {
     case 'title':
-      return lc(exp.title ?? '') === lc(got.title ?? '');
+      // lc() ignores punctuation, so separately reject stray punctuation tokens like "Dinner ."
+      return lc(exp.title ?? '') === lc(got.title ?? '') && !/(^|\s)[.!?,;:]+(\s|$)/.test(got.title ?? '');
     case 'amount':
     case 'tax':
       return Math.abs((exp[f] ?? 0) - (got[f] ?? 0)) < 0.005;

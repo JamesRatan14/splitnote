@@ -27,9 +27,10 @@ Core flow: `pay for group → open app → log (title, amount, tax, mode, friend
 | Custom splits, tax splitting (equal / proportional / custom), USD formatting | Done |
 | On-device ML in `utils/ml/` + eval harness with CI regression gates | Done |
 | ML suggestions on the Add screen (friends, category, mode, outlier/duplicate) | Done (browser-tested) |
-| Web/PWA build; web-safe confirm dialogs | Done, browser-tested locally; **not yet deployed** (needs GitHub repo) |
+| Web/PWA build; web-safe confirm dialogs | Done, **live** at https://jamesratan14.github.io/splitnote/ |
+| "Describe it" box (type or dictate via the iPhone keyboard mic) → fills the form | Done with the offline parser; LLM upgrade in step 4 |
 | Native iOS build for SideStore (`ios-sideload.yml`) | Workflow written + prebuild verified locally; **first CI run pending** |
-| FastAPI + Claude proxy on Vercel, "describe your expense" box | Next |
+| FastAPI + Claude proxy on Vercel (powers the existing "Describe it" box) | Next |
 | Receipt photo capture (vision) | Planned |
 | Eval on the owner's real expenses; README with metrics + demo GIF | Planned |
 
@@ -122,6 +123,11 @@ Pure helpers from `utils/formatters.ts` are allowed.
 **In the UI:** `hooks/useExpenseSuggestions.ts` turns the draft + history into suggestions; `components/SmartHints.tsx`
 renders them on the Add screen (`CategoryHint`, `AnomalyWarnings`, `ModeHint`, `FriendSuggestions`).
 Suggestions are **never applied without a tap**; warnings never block saving.
+**"Describe it"** (`components/QuickEntry.tsx`, top of the Add screen): text or keyboard dictation → `utils/parseExpense.ts`
+`parseExpense()` → fills only the fields it found (participants are replaced, others overwritten) and shows "Filled …".
+`parseExpense()` is the single plug-in point for the LLM proxy (keep it async; return `source`). Voice = the iOS keyboard's
+dictation mic, deliberately not the Web Speech API (unreliable in home-screen web apps). Dictation adds a trailing ".",
+capitalises, and writes "$84" — the parser strips stray sentence punctuation; `"tags":["dictation"]` cases cover this.
 The category hint is display-only (category is not stored yet — storing it would be an optional `category?` field).
 
 ### 5.2 LLM path (next — roadmap step 4)
@@ -140,9 +146,10 @@ The category hint is display-only (category is not stored yet — storing it wou
   accuracy-when-shown at the UI threshold), participant recall@3 vs frequency baseline, mode accuracy vs baseline
   (+ accuracy-when-shown), outlier precision/recall, duplicate sanity check — then a **regression-gate table**.
   Any gate below its floor → exit code 1 → CI (and the web deploy) fails.
-- Data: `evals/data/parse_cases.json` (43 labeled phrases; `"tags":["hard"]` = needs LLM), `evals/data/categories.json` (56 held-out titles).
+- Data: `evals/data/parse_cases.json` (53 labeled phrases; `"tags":["hard"]` = needs LLM, `"dictation"` = iPhone-dictation style), `evals/data/categories.json` (56 held-out titles).
 - **Honesty rules (do not break):**
-  - The parser's 100% on non-hard cases is a *development-set* score (cases and rules were written together). Not real-world accuracy.
+  - The parser's 100% on non-hard cases is a *development-set* score (cases and rules were written together; the 10 dictation
+    cases were written while fixing the punctuation bug). Not real-world accuracy.
   - Recommender / mode / anomaly numbers use *synthetic* history from a seeded generator. Label them synthetic everywhere.
   - `CATEGORY_HINT_MIN_CONFIDENCE = 0.2` was chosen by sweeping on the same 56-title set (0.2 → shown on 89%, 92% correct when shown),
     so that "accuracy when shown" is optimistically biased. Re-check on real data.
@@ -182,10 +189,10 @@ Expenz_1/
 │   ├── (tabs)/{index,synced,settings,_layout}.tsx
 │   └── transaction/{new,[id]}.tsx
 ├── components/                    ← TransactionCard, SplitBreakdown, SummaryHeader, ParticipantInput, ModeSelector,
-│                                    AmountInput, EmptyState, WebDateInput, SmartHints
+│                                    AmountInput, EmptyState, WebDateInput, SmartHints, QuickEntry
 ├── hooks/                         ← useTransactions, useFriendSuggestions, useExpenseSuggestions
 ├── utils/
-│   ├── calculations.ts  formatters.ts  storage.ts  uuid.ts  alert.ts
+│   ├── calculations.ts  formatters.ts  storage.ts  uuid.ts  alert.ts  parseExpense.ts
 │   ├── backup.ts / backup.web.ts  autoBackup.ts
 │   └── ml/                        ← on-device models (see §5.1)
 ├── evals/                         ← run.ts, tsconfig.json, data/*.json
@@ -248,7 +255,7 @@ Validation rules: title 2–80 chars; amount > 0 (cap $1,000,000); at least one 
 2. **Native via SideStore** — run `ios-sideload.yml`, fix anything the first macOS run surfaces, install SideStore (secondary Apple ID),
    add the source URL, install SplitNote.
 3. ~~Wire Phase-1 models into `new.tsx`~~ — done.
-4. **FastAPI proxy on Vercel + "describe your expense" box** — passphrase auth, spend cap, schema-validated, offline-parser fallback, LLM added to the eval table.
+4. **FastAPI proxy on Vercel behind the existing "Describe it" box** — passphrase auth, spend cap, schema-validated, offline-parser fallback, LLM added to the eval table.
 5. **Receipt capture** — image picker → vision → same schema; extend evals with a small labeled receipt set.
 6. **Real-data eval + README** — measure on ≥50 real expenses, architecture diagram, metrics table, demo GIF, live link.
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   ScrollView,
   TouchableOpacity,
@@ -19,9 +19,18 @@ interface ModeSelectorProps {
 export function ModeSelector({ selected, onSelect }: ModeSelectorProps) {
   const colorScheme = useColorScheme() ?? 'dark';
   const colors = Colors[colorScheme];
+  const scrollRef = useRef<ScrollView>(null);
+  const pillX = useRef<Partial<Record<PaymentMode, number>>>({});
+
+  // Keep the selected pill in view — e.g. when "Describe it" or a hint picks a mode that is off-screen.
+  useEffect(() => {
+    const x = pillX.current[selected];
+    if (x !== undefined) scrollRef.current?.scrollTo({ x: Math.max(0, x - Spacing.lg), animated: true });
+  }, [selected]);
 
   return (
     <ScrollView
+      ref={scrollRef}
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.container}
@@ -32,6 +41,11 @@ export function ModeSelector({ selected, onSelect }: ModeSelectorProps) {
           <TouchableOpacity
             key={mode}
             onPress={() => onSelect(mode)}
+            onLayout={e => {
+              pillX.current[mode] = e.nativeEvent.layout.x;
+            }}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isSelected }}
             style={[
               styles.pill,
               {

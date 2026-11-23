@@ -184,6 +184,8 @@ function cleanTitle(text: string): string | undefined {
     .replace(/\b(?:i|we)\s+(?:paid|spent|bought|got)\b/gi, ' ')
     .replace(/\b(?:paid|spent|bought|split|total|bill|equally|it|was)\b/gi, ' ')
     .replace(/[$+,;:%]/g, ' ')
+    // sentence punctuation left behind by dictation ("Dinner with Sam $84.") — keeps decimals like 9.50
+    .replace(/[.!?]+(?=\s|$)/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   t = t.replace(/^(?:and|plus)\s+|\s+(?:and|plus)$/gi, '').trim();

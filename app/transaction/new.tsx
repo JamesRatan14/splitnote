@@ -23,6 +23,8 @@ import { ModeSelector } from '../../components/ModeSelector';
 import { ParticipantInput } from '../../components/ParticipantInput';
 import { AnomalyWarnings, CategoryHint, FriendSuggestions, ModeHint } from '../../components/SmartHints';
 import { useExpenseSuggestions } from '../../hooks/useExpenseSuggestions';
+import { QuickEntry, QuickEntryResult } from '../../components/QuickEntry';
+import { describeFilled, parseExpense } from '../../utils/parseExpense';
 import { Colors } from '../../constants/Colors';
 import { Spacing, Radius, Typography } from '../../constants/Layout';
 import { DEFAULT_PAYMENT_MODE } from '../../constants/PaymentModes';
@@ -44,7 +46,7 @@ export default function NewTransactionScreen() {
   const colors = Colors[colorScheme];
   const insets = useSafeAreaInsets();
   const { transactions, addTransaction } = useTransactions();
-  const { getSuggestions, updateFriends } = useFriendSuggestions();
+  const { knownFriends, getSuggestions, updateFriends } = useFriendSuggestions();
 
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
@@ -189,6 +191,35 @@ export default function NewTransactionScreen() {
     }
   };
 
+  // "Describe it" box: fill whatever the parser found; the user reviews everything before saving.
+  const handleDescribe = useCallback(
+    async (text: string): Promise<QuickEntryResult> => {
+      const { parsed } = await parseExpense(text, knownFriends);
+      if (parsed.title) setTitle(parsed.title.slice(0, 80));
+      if (parsed.amount !== undefined && parsed.amount > 0) setAmount(String(parsed.amount));
+      if (parsed.tax !== undefined && parsed.tax > 0) setTax(String(parsed.tax));
+      if (parsed.mode) setMode(parsed.mode);
+      if (parsed.date) setDate(parsed.date);
+      if (parsed.participants.length > 0) {
+        const unique = parsed.participants
+          .map(n => n.trim())
+          .filter((n, i, arr) => n && arr.findIndex(x => x.toLowerCase() === n.toLowerCase()) === i)
+          .slice(0, 20);
+        setParticipants(unique);
+        setCustomAmounts({});
+        setCustomTaxAmounts({});
+        setIncludeMe(parsed.includeMe);
+      } else if (parsed.includeMe) {
+        setIncludeMe(true);
+      }
+      setErrors({});
+      const summary = describeFilled(parsed);
+      if (summary.filled.length > 0) Haptics.selectionAsync().catch(() => undefined);
+      return summary;
+    },
+    [knownFriends]
+  );
+
   const addParticipant = (name: string) => {
     setParticipants(prev => [...prev, name]);
     if (errors.participants) setErrors(prev => ({ ...prev, participants: undefined }));
@@ -244,6 +275,11 @@ export default function NewTransactionScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* Describe it (type or dictate) */}
+        <View style={styles.field}>
+          <QuickEntry onSubmit={handleDescribe} autoFocus />
+        </View>
+
         {/* Title */}
         <View style={styles.field}>
           <Text style={[styles.label, { color: colors.textSecondary }]}>TITLE *</Text>
@@ -260,7 +296,6 @@ export default function NewTransactionScreen() {
                 borderColor: errors.title ? colors.danger : colors.border,
               },
             ]}
-            autoFocus
             returnKeyType="next"
             maxLength={80}
           />
