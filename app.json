@@ -30,6 +30,13 @@
         {
           "sounds": []
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "SplitNote uses the microphone so you can say an expense instead of typing it.",
+          "speechRecognitionPermission": "SplitNote turns what you say into text to fill in the expense form."
+        }
       ]
     ]
   }

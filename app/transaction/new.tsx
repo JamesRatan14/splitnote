@@ -23,7 +23,8 @@ import { ModeSelector } from '../../components/ModeSelector';
 import { ParticipantInput } from '../../components/ParticipantInput';
 import { AnomalyWarnings, CategoryHint, FriendSuggestions, ModeHint } from '../../components/SmartHints';
 import { useExpenseSuggestions } from '../../hooks/useExpenseSuggestions';
-import { QuickEntry, QuickEntryResult } from '../../components/QuickEntry';
+import { VoiceMicButton, VoiceResultBanner, VoiceSheet } from '../../components/VoiceCapture';
+import { useVoiceInput } from '../../hooks/useVoiceInput';
 import { describeFilled, parseExpense } from '../../utils/parseExpense';
 import { Colors } from '../../constants/Colors';
 import { Spacing, Radius, Typography } from '../../constants/Layout';
@@ -63,6 +64,9 @@ export default function NewTransactionScreen() {
   const [note, setNote] = useState('');
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [voiceResult, setVoiceResult] = useState<{ heard: string; filled: string[]; missing: string[] } | null>(null);
+  const [saveBarHeight, setSaveBarHeight] = useState(0);
 
   const suggestions = useExpenseSuggestions(
     { title, amount: parseFloat(amount) || 0, date, mode, participants },
@@ -191,9 +195,9 @@ export default function NewTransactionScreen() {
     }
   };
 
-  // "Describe it" box: fill whatever the parser found; the user reviews everything before saving.
-  const handleDescribe = useCallback(
-    async (text: string): Promise<QuickEntryResult> => {
+  // Voice: fill whatever the parser found; the user reviews everything before saving.
+  const fillFromText = useCallback(
+    async (text: string): Promise<{ filled: string[]; missing: string[] }> => {
       const { parsed } = await parseExpense(text, knownFriends);
       if (parsed.title) setTitle(parsed.title.slice(0, 80));
       if (parsed.amount !== undefined && parsed.amount > 0) setAmount(String(parsed.amount));
@@ -219,6 +223,30 @@ export default function NewTransactionScreen() {
     },
     [knownFriends]
   );
+
+  const voice = useVoiceInput(
+    useCallback(
+      (heard: string) => {
+        fillFromText(heard).then(summary => {
+          setVoiceResult({ heard, ...summary });
+          setVoiceOpen(false);
+        });
+      },
+      [fillFromText]
+    ),
+    knownFriends
+  );
+
+  const openVoice = () => {
+    setVoiceResult(null);
+    setVoiceOpen(true);
+    voice.start(); // synchronous inside the tap (required by Safari)
+  };
+
+  const closeVoice = () => {
+    voice.cancel();
+    setVoiceOpen(false);
+  };
 
   const addParticipant = (name: string) => {
     setParticipants(prev => [...prev, name]);
@@ -271,14 +299,16 @@ export default function NewTransactionScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 200 }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Describe it (type or dictate) */}
-        <View style={styles.field}>
-          <QuickEntry onSubmit={handleDescribe} autoFocus />
-        </View>
+        {/* Result of the last voice entry */}
+        {voiceResult ? (
+          <View style={styles.field}>
+            <VoiceResultBanner {...voiceResult} onDismiss={() => setVoiceResult(null)} />
+          </View>
+        ) : null}
 
         {/* Title */}
         <View style={styles.field}>
@@ -602,7 +632,19 @@ export default function NewTransactionScreen() {
         </View>
       </ScrollView>
 
+      <VoiceMicButton onPress={openVoice} bottom={saveBarHeight + Spacing.lg} />
+      <VoiceSheet
+        visible={voiceOpen}
+        listening={voice.listening}
+        transcript={voice.transcript}
+        error={voice.error}
+        onStop={voice.stop}
+        onCancel={closeVoice}
+        onRetry={voice.start}
+      />
+
       <View
+        onLayout={e => setSaveBarHeight(e.nativeEvent.layout.height)}
         style={[
           styles.saveButtonContainer,
           {
