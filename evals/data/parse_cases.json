@@ -51,5 +51,11 @@
  {"input":"Paid $45 for pizza with Sam and Alex using my credit card.","expected":{"title":"Pizza","amount":45,"mode":"Credit Card","participants":["Sam","Alex"],"includeMe":false},"tags":["dictation"]},
  {"input":"Lunch at Chipotle $36 with Rahul, Priya and Sam. Paid cash.","expected":{"title":"Lunch at Chipotle","amount":36,"mode":"Cash","participants":["Rahul","Priya","Sam"],"includeMe":false},"tags":["dictation"]},
  {"input":"Gas $40 with Josh.","expected":{"title":"Gas","amount":40,"participants":["Josh"],"includeMe":false},"tags":["dictation"]},
- {"input":"Bowling $60 plus $4 tax with Ravi and Dan.","expected":{"title":"Bowling","amount":60,"tax":4,"participants":["Ravi","Dan"],"includeMe":false},"tags":["dictation"]}
+ {"input":"Bowling $60 plus $4 tax with Ravi and Dan.","expected":{"title":"Bowling","amount":60,"tax":4,"participants":["Ravi","Dan"],"includeMe":false},"tags":["dictation"]},
+ {"input":"I have paid a movie ticket total $30 which includes me and my friend so I have to share and split on both of us and his name is D","expected":{"title":"Movie ticket","amount":30,"participants":["D"],"includeMe":true},"tags":["natural"]},
+ {"input":"I paid $45 for dinner at Olive Garden for me and Rahul","expected":{"title":"Dinner - Olive Garden","amount":45,"participants":["Rahul"],"includeMe":true},"tags":["natural"]},
+ {"input":"Paid for groceries at Wegmans, $82, me and Maya split it","expected":{"title":"Groceries - Wegmans","amount":82,"participants":["Maya"],"includeMe":true},"tags":["natural"]},
+ {"input":"Uber to the airport was $38, split between me, Sam and Alex","expected":{"title":"Uber to the airport","amount":38,"participants":["Sam","Alex"],"includeMe":true},"tags":["natural"]},
+ {"input":"Got coffee for Priya and me, $11 on Apple Pay","expected":{"title":"Coffee","amount":11,"mode":"Apple Pay","participants":["Priya"],"includeMe":true},"tags":["natural"]},
+ {"input":"My friend Josh and I went bowling, I paid $60","expected":{"title":"Bowling","amount":60,"participants":["Josh"],"includeMe":true},"tags":["natural"]}
 ]

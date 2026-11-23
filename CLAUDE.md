@@ -30,8 +30,9 @@ Core flow: `pay for group → open app → log (title, amount, tax, mode, friend
 | Web/PWA build; web-safe confirm dialogs | Done, **live** at https://jamesratan14.github.io/splitnote/ |
 | Voice entry: floating mic → listening sheet → fills the form | Done (offline parser; browser-tested with a mocked recogniser — **real-device test pending**); LLM upgrade in step 4 |
 | Native iOS build for SideStore (`ios-sideload.yml`) | Workflow written + prebuild verified locally; **first CI run pending** |
-| FastAPI + Claude proxy on Vercel (powers the existing voice entry) | Next |
-| Receipt photo capture (vision) | Planned |
+| Claude path: FastAPI proxy (`server/`) → voice parsing + receipt reading, app-side validation, offline fallback | Built + tested with a fake Claude (20 server tests, browser e2e); **not deployed — needs the owner's Vercel + Anthropic accounts** |
+| Receipt scan (camera button on Add screen → Claude vision) | Built (same status as above) |
+| LLM eval vs offline (`server/evals/eval_llm.py`) | Built; **not run yet** (costs ~$0.70; needs the key) |
 | Eval on the owner's real expenses; README with metrics + demo GIF | Planned |
 
 ---
@@ -46,7 +47,7 @@ Core flow: `pay for group → open app → log (title, amount, tax, mode, friend
 | Web | `react-native-web`, `react-dom`, `@expo/metro-runtime`; Metro bundler, `output: "single"` (SPA) |
 | Native-only modules | `expo-haptics` (no-op on web), `expo-notifications`, `expo-file-system`, `expo-sharing`, `@react-native-community/datetimepicker` |
 | AI (on-device) | Pure TypeScript in `utils/ml/` — runs on native and web |
-| AI (cloud, planned) | FastAPI on **Vercel** (serverless Python) → Claude with structured output; key lives only on the server |
+| AI (cloud) | `server/`: FastAPI on **Vercel** (serverless Python) → `anthropic` 2.x `beta.messages.parse` with Pydantic structured output; default `claude-opus-5-5`, effort `low`, refusal `fallbacks: "default"`; key lives only on the server |
 | CI/CD | GitHub Actions: web → GitHub Pages (Linux); iOS `.ipa` → GitHub Release (macOS) |
 
 Keep dependencies on SDK-54-compatible versions: run `npx expo install --check` after adding packages
@@ -136,23 +137,33 @@ punctuation; `"tags":["dictation"]` cases cover this. Home-screen web apps on ol
 SpeechRecognition support — if it fails on the owner's phone, the SideStore native build is the fallback.
 The category hint is display-only (category is not stored yet — storing it would be an optional `category?` field).
 
-### 5.2 LLM path (next — roadmap step 4)
-- FastAPI app in `server/`, deployed to **Vercel** (Python serverless, auto-deploys from the GitHub repo).
-  The Anthropic key is a Vercel env var only — **never** in the app bundle, repo, or anything shipped to the client.
-- **Auth:** a passphrase the owner types once in Settings (stored on-device, never in the bundle); the server rejects requests without it.
-- Set a **hard monthly spend cap** in the Anthropic console. Limit input size. No logging of expense text or receipt images.
-  Serverless = no reliable in-memory rate limiting; rely on passphrase + spend cap + size limit.
-- CORS: allow only the GitHub Pages origin and localhost.
-- Claude is called with a JSON schema mirroring `ParsedExpense`; the app **validates the response** (types, ranges, amount > 0,
-  participant count) before filling the form, and falls back to `parseExpenseOffline` on any failure/timeout/offline.
-- Receipt photos (`expo-image-picker`) → vision → same schema (items, tax, total).
+### 5.2 LLM path — `server/` + `utils/ai/` (built; deploy steps in `server/README.md`)
+- **Server** (`server/splitnote_ai/`): `main.py` (FastAPI routes, passphrase auth via `X-SplitNote-Key` + `hmac.compare_digest`,
+  CORS allow-list, 6.5 MB body cap, content-free logs), `claude.py` (Claude calls + `sanitize_expense` / `receipt_to_expense`
+  range checks), `schemas.py` (Pydantic: `ExpenseExtraction` / `ReceiptExtraction` = what Claude must return; `ExpenseOut` =
+  camelCase response), `prompts.py` (static system prompts — no dates, so cacheable; per-request data goes in the user turn,
+  transcript wrapped in `<transcript>` and declared to be data). Vercel entry `api/index.py` + `vercel.json` (Root Directory = `server`).
+- Routes: `GET /health`, `POST /auth` (passphrase check, **no Claude call**), `POST /parse`, `POST /receipt`.
+- Env vars: `ANTHROPIC_API_KEY`, `SPLITNOTE_PASSPHRASE` (unset → all POSTs refused), optional `SPLITNOTE_CLAUDE_MODEL`,
+  `SPLITNOTE_CLAUDE_EFFORT`, `ALLOWED_ORIGINS`. **Don't name them `CLAUDE_*`** — Claude Code exports `CLAUDE_EFFORT` into shells.
+- SDK: `anthropic>=2.11,<3` (API version 2026-10-21: no `temperature`/`top_p`/`top_k`). Opus 5.5 can't disable thinking —
+  effort is the only knob. Errors are mapped to typed codes (`refused` 422, `rate_limited` 503, `timeout` 504, `invalid_output` 502…).
+- **App** (`utils/ai/client.ts`, `utils/ai/validate.ts`, `hooks/useAiSettings.ts`, `hooks/useReceiptScan.ts`,
+  `components/AiSettingsCard.tsx`): URL + passphrase stored on-device (`@splitnote/ai_settings_v1`), never in the bundle.
+  `validateAiExpense()` re-checks every field (types, ranges, mode/category enums, ISO dates, names, custom shares ≤ amount).
+  `utils/parseExpense.ts` tries Claude first and falls back to `parseExpenseOffline` on any failure; the banner says which
+  answered ("via Claude · 1.8s" / "offline parser · <reason>").
+- Receipts: `expo-image-picker` (web: the browser picker, opened inside the tap) → `expo-image-manipulator` resize to 1568 px
+  JPEG q0.7 → `/receipt`. Amount = subtotal + tip (tax stays separate); line items go to the note. Friends are never set from receipts.
+- Title style (both paths): `"<What> - <Merchant>"` when a place is known (e.g. "Food - Olive Garden"), else a short noun phrase.
+- Tests: `server/tests/test_app.py` (20, fake client — run in CI by `.github/workflows/server-tests.yml`).
 
 ### 5.3 Evals — `evals/`
 - `npm run eval` prints parser field-level + exact-match accuracy, category accuracy vs majority baseline (+ hint coverage /
   accuracy-when-shown at the UI threshold), participant recall@3 vs frequency baseline, mode accuracy vs baseline
   (+ accuracy-when-shown), outlier precision/recall, duplicate sanity check — then a **regression-gate table**.
   Any gate below its floor → exit code 1 → CI (and the web deploy) fails.
-- Data: `evals/data/parse_cases.json` (53 labeled phrases; `"tags":["hard"]` = needs LLM, `"dictation"` = iPhone-dictation style), `evals/data/categories.json` (56 held-out titles).
+- Data: `evals/data/parse_cases.json` (59 labeled phrases; `"tags":["hard"]` = needs LLM, `"dictation"` = iPhone-dictation style, `"natural"` = rambling speech incl. the owner's real example), `evals/data/categories.json` (56 held-out titles).
 - **Honesty rules (do not break):**
   - The parser's 100% on non-hard cases is a *development-set* score (cases and rules were written together; the 10 dictation
     cases were written while fixing the punctuation bug). Not real-world accuracy.
@@ -162,8 +173,12 @@ The category hint is display-only (category is not stored yet — storing it wou
   - Naive Bayes confidences are poorly calibrated (8 classes → low max-probabilities); don't present them as probabilities.
   - Gate floors catch regressions; they are not accuracy claims.
   - Only cite numbers measured on held-out or the owner's **real** expenses (target: ≥50 real entries) and say n.
-- When adding the LLM parser: add it as a second system in `evalParser(...)`, same cases, report accuracy + p50/p95 latency + $/request,
-  and keep the offline baseline in the table.
+- **LLM eval:** `server/evals/eval_llm.py` runs Claude on the same cases with the same field rules (Python port; verified to
+  reproduce the TS offline numbers exactly) and prints offline vs Claude side by side, by tag, plus p50/p95 latency and $/request;
+  writes `server/evals/results/llm-<model>-<date>.json`. Dry-run by default; `--yes` spends money — ask the owner first.
+  Titles are compared strictly ("at" ≡ "-") and leniently (plurals/stop words ignored); report both.
+  The natural/dictation cases were written while improving the offline rules → development set for the offline parser
+  (Claude never saw them, but they are still not real-world data).
 
 ---
 
@@ -195,15 +210,18 @@ Expenz_1/
 │   ├── (tabs)/{index,synced,settings,_layout}.tsx
 │   └── transaction/{new,[id]}.tsx
 ├── components/                    ← TransactionCard, SplitBreakdown, SummaryHeader, ParticipantInput, ModeSelector,
-│                                    AmountInput, EmptyState, WebDateInput, SmartHints, VoiceCapture
-├── hooks/                         ← useTransactions, useFriendSuggestions, useExpenseSuggestions, useVoiceInput
+│                                    AmountInput, EmptyState, WebDateInput, SmartHints, VoiceCapture, AiSettingsCard
+├── hooks/                         ← useTransactions, useFriendSuggestions, useExpenseSuggestions, useVoiceInput,
+│                                    useAiSettings, useReceiptScan
 ├── utils/
 │   ├── calculations.ts  formatters.ts  storage.ts  uuid.ts  alert.ts  parseExpense.ts
+│   ├── ai/                        ← client.ts (proxy calls, typed errors), validate.ts (response checks)
 │   ├── backup.ts / backup.web.ts  autoBackup.ts
 │   └── ml/                        ← on-device models (see §5.1)
 ├── evals/                         ← run.ts, tsconfig.json, data/*.json
 ├── scripts/postexport.js          ← PWA tags + 404.html after `expo export`
 ├── scripts/sidestore-source.js    ← writes SideStore source.json in the iOS workflow
+├── server/                        ← FastAPI + Claude proxy (Vercel); see §5.2 and server/README.md
 ├── assets/icon.png                ← native app icon
 ├── public/                        ← web manifest + icons
 ├── .github/workflows/deploy-web.yml   ← web → Pages (on push to main)
@@ -225,6 +243,8 @@ npx expo start --web         # local web dev
 EXPO_BASE_URL=/splitnote npm run build:web   # production web build -> dist/ (+ PWA tags, 404.html)
 npx expo install --check     # verify SDK-54-compatible dependency versions
 npx expo prebuild -p ios --no-install        # sanity-check native config (no Xcode needed); delete ios/ after
+cd server && .venv/bin/python -m pytest -q tests   # proxy tests (fake Claude, free)
+cd server && .venv/bin/python evals/eval_llm.py    # LLM eval cost estimate; add --yes to run (paid)
 ```
 
 CI:
@@ -261,8 +281,9 @@ Validation rules: title 2–80 chars; amount > 0 (cap $1,000,000); at least one 
 2. **Native via SideStore** — run `ios-sideload.yml`, fix anything the first macOS run surfaces, install SideStore (secondary Apple ID),
    add the source URL, install SplitNote.
 3. ~~Wire Phase-1 models into `new.tsx`~~ — done.
-4. **FastAPI proxy on Vercel behind the existing voice entry** — passphrase auth, spend cap, schema-validated, offline-parser fallback, LLM added to the eval table.
-5. **Receipt capture** — image picker → vision → same schema; extend evals with a small labeled receipt set.
+4. ~~FastAPI proxy + voice via Claude + receipt scan~~ — built. **Owner:** deploy per `server/README.md`, then set URL +
+   passphrase in Settings → AI; then run `eval_llm.py --yes` and record the numbers.
+5. **Receipt eval** — a small labeled set of real receipt photos (never commit personal receipts publicly — keep them local).
 6. **Real-data eval + README** — measure on ≥50 real expenses, architecture diagram, metrics table, demo GIF, live link.
 
 ## 11. Notes for Claude when working in this repo

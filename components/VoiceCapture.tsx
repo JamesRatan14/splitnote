@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Easing,
   Modal,
@@ -35,9 +36,43 @@ export function VoiceMicButton({ onPress, bottom }: { onPress: () => void; botto
   );
 }
 
+/** Smaller floating camera button (sits above the mic). */
+export function ReceiptButton({ onPress, bottom }: { onPress: () => void; bottom: number }) {
+  const colors = useColors();
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel="Scan a receipt"
+      style={[styles.fabSmall, { bottom, backgroundColor: colors.surfaceHigh, borderColor: colors.primary }]}
+    >
+      <Ionicons name="camera" size={22} color={colors.primary} />
+    </TouchableOpacity>
+  );
+}
+
+/** Blocking "working…" sheet (e.g. reading a receipt). */
+export function ProgressSheet({ visible, label }: { visible: boolean; label: string }) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.backdrop}>
+        <View style={[styles.sheet, styles.progressSheet, { backgroundColor: colors.surface, paddingBottom: insets.bottom + Spacing.xl }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.status, { color: colors.text }]}>{label}</Text>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 interface VoiceSheetProps {
   visible: boolean;
   listening: boolean;
+  /** Speech is done and the text is being understood (e.g. by Claude). */
+  processing?: boolean;
   transcript: string;
   error: string | null;
   onStop: () => void;
@@ -46,7 +81,7 @@ interface VoiceSheetProps {
 }
 
 /** Google-style listening sheet: pulsing mic, live transcript, Done / Cancel. */
-export function VoiceSheet({ visible, listening, transcript, error, onStop, onCancel, onRetry }: VoiceSheetProps) {
+export function VoiceSheet({ visible, listening, processing, transcript, error, onStop, onCancel, onRetry }: VoiceSheetProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const pulse = useRef(new Animated.Value(0)).current;
@@ -72,7 +107,17 @@ export function VoiceSheet({ visible, listening, transcript, error, onStop, onCa
   const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.8] });
   const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] });
 
-  const status = error ? null : listening ? (transcript ? null : 'Listening…') : transcript ? 'Got it' : 'Starting…';
+  const status = error
+    ? null
+    : processing
+      ? 'Understanding…'
+      : listening
+        ? transcript
+          ? null
+          : 'Listening…'
+        : transcript
+          ? 'Got it'
+          : 'Starting…';
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
@@ -102,6 +147,7 @@ export function VoiceSheet({ visible, listening, transcript, error, onStop, onCa
             </TouchableOpacity>
           </View>
 
+          {processing ? <ActivityIndicator color={colors.primary} /> : null}
           {status ? <Text style={[styles.status, { color: colors.textSecondary }]}>{status}</Text> : null}
           {transcript ? (
             <Text style={[styles.transcript, { color: colors.text }]} accessibilityLiveRegion="polite">
@@ -131,18 +177,19 @@ export function VoiceSheet({ visible, listening, transcript, error, onStop, onCa
   );
 }
 
-/** Small banner shown after voice fills the form. */
-export function VoiceResultBanner({
-  heard,
-  filled,
-  missing,
-  onDismiss,
-}: {
-  heard: string;
+export interface FillResult {
   filled: string[];
   missing: string[];
-  onDismiss: () => void;
-}) {
+  /** What the user said (voice) — omitted for receipts. */
+  heard?: string;
+  /** e.g. "via Claude · 1.8s" or "offline parser · AI server unreachable". */
+  source: string;
+  /** Set when nothing could be filled (e.g. the receipt could not be read). */
+  error?: string;
+}
+
+/** Small banner shown after voice / a receipt fills the form. */
+export function VoiceResultBanner({ heard, filled, missing, source, error, onDismiss }: FillResult & { onDismiss: () => void }) {
   const colors = useColors();
   const nothing = filled.length === 0;
   return (
@@ -150,12 +197,19 @@ export function VoiceResultBanner({
       <Ionicons name={nothing ? 'help-circle-outline' : 'checkmark-circle'} size={18} color={nothing ? colors.pending : colors.primary} />
       <View style={{ flex: 1 }}>
         <Text style={[styles.bannerTitle, { color: nothing ? colors.pending : colors.primary }]}>
-          {nothing
-            ? "Couldn't pick out an expense. Try again or fill it in below."
-            : `Filled ${filled.join(', ')}${missing.length ? ` · add ${missing.join(', ')}` : ' · check and save'}`}
+          {error
+            ? error
+            : nothing
+              ? "Couldn't pick out an expense. Try again or fill it in below."
+              : `Filled ${filled.join(', ')}${missing.length ? ` · add ${missing.join(', ')}` : ' · check and save'}`}
         </Text>
-        <Text style={[styles.bannerHeard, { color: colors.textSecondary }]} numberOfLines={2}>
-          Heard: “{heard}”
+        {heard ? (
+          <Text style={[styles.bannerHeard, { color: colors.textSecondary }]} numberOfLines={2}>
+            Heard: “{heard}”
+          </Text>
+        ) : null}
+        <Text style={[styles.bannerHeard, { color: colors.textSecondary }]} accessibilityLabel={`Source: ${source}`}>
+          {source}
         </Text>
       </View>
       <TouchableOpacity onPress={onDismiss} accessibilityRole="button" accessibilityLabel="Dismiss" hitSlop={10}>
@@ -181,6 +235,17 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
+  fabSmall: {
+    position: 'absolute',
+    right: Spacing.xl + 8,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressSheet: { minHeight: 200, justifyContent: 'center' },
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
   sheet: {
     borderTopLeftRadius: Radius.xxl,

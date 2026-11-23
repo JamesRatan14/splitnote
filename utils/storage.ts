@@ -20,3 +20,6 @@ export async function saveData<T>(key: string, value: T): Promise<void> {
     console.error('Storage save failed', e);
   }
 }
+
+/** AI proxy URL + passphrase (on-device only; never in the bundle). */
+export const AI_SETTINGS_KEY = '@splitnote/ai_settings_v1';

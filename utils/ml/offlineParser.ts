@@ -194,6 +194,90 @@ function cleanTitle(text: string): string | undefined {
   return t ? cap(t) : undefined;
 }
 
+// ---------- natural-speech fallbacks (used when the "with X and Y" pattern finds nobody) ----------
+
+const NOT_A_NAME = new Set([
+  'i', 'me', 'my', 'we', 'us', 'the', 'a', 'an', 'and', 'or', 'it', 'he', 'she', 'they', 'his', 'her', 'their',
+  'so', 'then', 'paid', 'pay', 'split', 'total', 'dinner', 'lunch', 'breakfast', 'coffee', 'uber', 'lyft', 'zelle',
+  'cash', 'apple', 'venmo', 'movie', 'movies', 'groceries', 'today', 'yesterday', 'tonight', 'went', 'got',
+]);
+const RELATION = '(?:friend|friends|roommate|roommates|buddy|coworker|colleague|brother|sister|cousin|mate)';
+
+/**
+ * Picks up friends from natural phrasing the main extractor misses:
+ * "me and Maya", "Priya and me", "Josh and I", "his name is D", "my friend Josh", or a known friend mentioned anywhere.
+ */
+function extractLooseParticipants(
+  text: string,
+  known: string[]
+): { names: string[]; includeMe: boolean; rest: string } {
+  const knownMap = new Map(known.map(k => [k.toLowerCase(), k]));
+  const names: string[] = [];
+  let rest = text;
+  const add = (raw: string) => {
+    const w = raw.replace(/[,.;!?]+$/g, '').trim();
+    if (!w || NOT_A_NAME.has(w.toLowerCase()) || /\d|\$/.test(w)) return;
+    const name = knownMap.get(w.toLowerCase()) ?? w.split(' ').map(cap).join(' ');
+    if (!names.some(n => n.toLowerCase() === name.toLowerCase())) names.push(name);
+  };
+  const take = (re: RegExp, group = 1) => {
+    rest = rest.replace(re, (...m: string[]) => {
+      add(m[group]);
+      return ' ';
+    });
+  };
+
+  // "his name is D", "their names are Sam and Alex"
+  rest = rest.replace(
+    /\b(?:his|her|their|(?:my\s+)?friends?'?s?)\s+names?\s+(?:is|are|was|were)\s+([\w'-]+(?:\s*(?:,|and|&)\s*[\w'-]+)*)/gi,
+    (_m: string, list: string) => {
+      list.split(/\s*(?:,|\band\b|&)\s*/i).forEach(add);
+      return ' ';
+    }
+  );
+  take(new RegExp(`\\b[Mm]y\\s+${RELATION}\\s+([A-Z][\\w'-]*)`, 'g')); // "my friend Josh"
+  take(/\b(?:me|myself)\s+and\s+([A-Z][\w'-]*)/g); // "me and Maya"
+  take(/\b([A-Z][\w'-]*)\s+and\s+(?:me|myself|I)\b/g); // "Priya and me", "Josh and I"
+
+  // a known friend mentioned anywhere ("... for Rahul")
+  for (const k of known) {
+    const re = new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (re.test(rest)) {
+      add(k);
+      rest = rest.replace(re, ' ');
+    }
+  }
+
+  const includeMe =
+    /\b(?:includ(?:es|ing|ed)\s+me|both\s+of\s+us|all\s+of\s+us|\d+\s+of\s+us|(?:between|among|on)\s+(?:the\s+)?(?:both\s+of\s+)?us|for\s+(?:me|us)\b|me\s+and\b|and\s+(?:me|myself|I)\b|(?:split|share)\s+(?:it\s+)?with\s+me)/i.test(
+      text
+    );
+  return { names, includeMe, rest };
+}
+
+/** Turns a long spoken sentence into a short title: drops filler, cuts at clause words, "X at Place" → "X - Place". */
+function simplifyTitle(raw: string | undefined): string | undefined {
+  if (!raw) return raw;
+  let t = ` ${raw} `;
+  t = t
+    .replace(new RegExp(`\\b(?:my\\s+${RELATION}\\s+(?:and\\s+I\\s+)?|we\\s+)(?:went|had|did|got)?\\s*(?:to\\s+)?`, 'gi'), ' ')
+    .replace(/\b(?:i|we)\s+(?:have\s+|had\s+|just\s+)?(?:paid|got|bought|spent|covered|had)?\s*(?:for\s+)?/gi, ' ')
+    .replace(/^\s*(?:and\s+)?(?:got|bought|grabbed|went|go|going)\s+(?:to\s+)?(?:the\s+)?/i, ' ');
+  // cut at the first clause marker: the rest is explanation, not a title
+  const cut = t.search(
+    /\s(?:which|that|so|because|since|cause|and\s+(?:his|her|their|my|i|we)|split|share|for\s+(?:me|us|the\s+(?:both|two|three|four))|includes?|including|to\s+share|was|were|with|me\s+and)\b/i
+  );
+  if (cut > 1) t = t.slice(0, cut);
+  t = t.replace(/\s+(?:for|to|on|of|and|the|a|an)\s*$/i, '').replace(/^\s*(?:a|an|the)\s+/i, '');
+  t = t.replace(/\s+/g, ' ').trim();
+  // "Dinner at Olive Garden" → "Dinner - Olive Garden" (place names are capitalised by speech-to-text)
+  const at = t.match(/^(.+?)\s+at\s+([A-Z][\w'&-]*(?:\s+[A-Z][\w'&-]*)*)$/);
+  if (at) t = `${at[1]} - ${at[2]}`;
+  const words = t.split(' ');
+  if (words.length > 6) t = words.slice(0, 6).join(' ');
+  return t ? cap(t) : undefined;
+}
+
 export interface ParseOptions {
   today: string; // YYYY-MM-DD, injected for determinism
   knownFriends?: string[];
@@ -211,8 +295,13 @@ export function parseExpenseOffline(input: string, opts: ParseOptions): ParsedEx
   text = tx.rest;
   const am = extractAmount(text);
   text = am.rest;
-  const pa = extractParticipants(text, known);
+  let pa = extractParticipants(text, known);
   text = pa.rest;
+  if (pa.names.length === 0) {
+    const loose = extractLooseParticipants(text, known);
+    pa = { names: loose.names, includeMe: pa.includeMe || loose.includeMe, rest: loose.rest };
+    text = loose.rest;
+  }
 
   let amount = am.amount;
   let tax = tx.tax;
@@ -224,7 +313,7 @@ export function parseExpenseOffline(input: string, opts: ParseOptions): ParsedEx
   }
 
   return {
-    title: cleanTitle(text),
+    title: simplifyTitle(cleanTitle(text)),
     amount,
     tax,
     mode: mo.mode,

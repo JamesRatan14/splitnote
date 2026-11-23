@@ -19,6 +19,7 @@ import { Spacing, Radius, Typography } from '../../constants/Layout';
 import { exportBackup, importBackup } from '../../utils/backup';
 import { useTransactions } from '../../hooks/useTransactions';
 import { shouldPromptBackup, daysSinceInstall } from '../../utils/autoBackup';
+import { AiSettingsCard } from '../../components/AiSettingsCard';
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? 'dark';
@@ -124,6 +125,10 @@ export default function SettingsScreen() {
             </Text>
           </View>
         )}
+
+        {/* AI section */}
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>AI</Text>
+        <AiSettingsCard />
 
         {/* Backup section */}
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>DATA BACKUP</Text>

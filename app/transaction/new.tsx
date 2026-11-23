@@ -23,9 +23,13 @@ import { ModeSelector } from '../../components/ModeSelector';
 import { ParticipantInput } from '../../components/ParticipantInput';
 import { AnomalyWarnings, CategoryHint, FriendSuggestions, ModeHint } from '../../components/SmartHints';
 import { useExpenseSuggestions } from '../../hooks/useExpenseSuggestions';
-import { VoiceMicButton, VoiceResultBanner, VoiceSheet } from '../../components/VoiceCapture';
+import { FillResult, ProgressSheet, ReceiptButton, VoiceMicButton, VoiceResultBanner, VoiceSheet } from '../../components/VoiceCapture';
+import { useAiSettings } from '../../hooks/useAiSettings';
+import { useReceiptScan } from '../../hooks/useReceiptScan';
+import { isAiReady } from '../../utils/ai/client';
+import type { ParsedExpense } from '../../utils/ml';
 import { useVoiceInput } from '../../hooks/useVoiceInput';
-import { describeFilled, parseExpense } from '../../utils/parseExpense';
+import { describeFilled, parseExpense, ParseResult } from '../../utils/parseExpense';
 import { Colors } from '../../constants/Colors';
 import { Spacing, Radius, Typography } from '../../constants/Layout';
 import { DEFAULT_PAYMENT_MODE } from '../../constants/PaymentModes';
@@ -65,7 +69,10 @@ export default function NewTransactionScreen() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSaving, setIsSaving] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
-  const [voiceResult, setVoiceResult] = useState<{ heard: string; filled: string[]; missing: string[] } | null>(null);
+  const [voiceResult, setVoiceResult] = useState<FillResult | null>(null);
+  const [voiceProcessing, setVoiceProcessing] = useState(false);
+  const { settings: ai } = useAiSettings();
+  const receipt = useReceiptScan(ai);
   const [saveBarHeight, setSaveBarHeight] = useState(0);
 
   const suggestions = useExpenseSuggestions(
@@ -195,44 +202,59 @@ export default function NewTransactionScreen() {
     }
   };
 
-  // Voice: fill whatever the parser found; the user reviews everything before saving.
-  const fillFromText = useCallback(
-    async (text: string): Promise<{ filled: string[]; missing: string[] }> => {
-      const { parsed } = await parseExpense(text, knownFriends);
-      if (parsed.title) setTitle(parsed.title.slice(0, 80));
-      if (parsed.amount !== undefined && parsed.amount > 0) setAmount(String(parsed.amount));
-      if (parsed.tax !== undefined && parsed.tax > 0) setTax(String(parsed.tax));
-      if (parsed.mode) setMode(parsed.mode);
-      if (parsed.date) setDate(parsed.date);
-      if (parsed.participants.length > 0) {
-        const unique = parsed.participants
-          .map(n => n.trim())
-          .filter((n, i, arr) => n && arr.findIndex(x => x.toLowerCase() === n.toLowerCase()) === i)
-          .slice(0, 20);
-        setParticipants(unique);
+  // Fill whatever the parser / Claude found. Nothing is saved: the user reviews everything first.
+  const applyParsed = useCallback((parsed: ParsedExpense): { filled: string[]; missing: string[] } => {
+    if (parsed.title) setTitle(parsed.title.slice(0, 80));
+    if (parsed.amount !== undefined && parsed.amount > 0) setAmount(String(parsed.amount));
+    if (parsed.tax !== undefined && parsed.tax > 0) setTax(String(parsed.tax));
+    if (parsed.mode) setMode(parsed.mode);
+    if (parsed.date) setDate(parsed.date);
+    if (parsed.participants.length > 0) {
+      const unique = parsed.participants
+        .map(n => n.trim())
+        .filter((n, i, arr) => n && arr.findIndex(x => x.toLowerCase() === n.toLowerCase()) === i)
+        .slice(0, 20);
+      setParticipants(unique);
+      setIncludeMe(parsed.includeMe);
+      setCustomTaxAmounts({});
+      if (parsed.splitType === 'custom' && parsed.customAmounts) {
+        const shares: Record<string, string> = {};
+        for (const [name, value] of Object.entries(parsed.customAmounts)) shares[name] = String(value);
+        setSplitType('custom');
+        setCustomAmounts(shares);
+      } else {
+        setSplitType('equal');
         setCustomAmounts({});
-        setCustomTaxAmounts({});
-        setIncludeMe(parsed.includeMe);
-      } else if (parsed.includeMe) {
-        setIncludeMe(true);
       }
-      setErrors({});
-      const summary = describeFilled(parsed);
-      if (summary.filled.length > 0) Haptics.selectionAsync().catch(() => undefined);
-      return summary;
-    },
-    [knownFriends]
-  );
+    } else if (parsed.includeMe) {
+      setIncludeMe(true);
+    }
+    const parsedNote = parsed.note;
+    if (parsedNote) setNote(prev => (prev.trim() ? prev : parsedNote.slice(0, 200)));
+    setErrors({});
+    const summary = describeFilled(parsed);
+    if (summary.filled.length > 0) Haptics.selectionAsync().catch(() => undefined);
+    return summary;
+  }, []);
+
+  const sourceLabel = (r: ParseResult): string =>
+    r.source === 'llm'
+      ? `via Claude${r.latencyMs ? ` · ${(r.latencyMs / 1000).toFixed(1)}s` : ''}`
+      : `offline parser${r.fallbackReason ? ` · ${r.fallbackReason}` : ''}`;
 
   const voice = useVoiceInput(
     useCallback(
       (heard: string) => {
-        fillFromText(heard).then(summary => {
-          setVoiceResult({ heard, ...summary });
-          setVoiceOpen(false);
-        });
+        setVoiceProcessing(true);
+        parseExpense(heard, knownFriends, ai)
+          .then(r => setVoiceResult({ heard, ...applyParsed(r.parsed), source: sourceLabel(r) }))
+          .finally(() => {
+            setVoiceProcessing(false);
+            setVoiceOpen(false);
+          });
       },
-      [fillFromText]
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [knownFriends, ai, applyParsed]
     ),
     knownFriends
   );
@@ -245,7 +267,43 @@ export default function NewTransactionScreen() {
 
   const closeVoice = () => {
     voice.cancel();
+    setVoiceProcessing(false);
     setVoiceOpen(false);
+  };
+
+  const runReceipt = (source: 'camera' | 'library') => {
+    setVoiceResult(null);
+    receipt.scan(source).then(out => {
+      if (out.kind === 'cancelled') return;
+      if (out.kind === 'error') {
+        setVoiceResult({ filled: [], missing: [], source: 'receipt', error: out.message });
+        return;
+      }
+      const summary = applyParsed(out.result.parsed);
+      const ms = out.result.meta?.latencyMs;
+      setVoiceResult({
+        filled: summary.filled,
+        // a receipt never names friends; only ask for them if none are added yet
+        missing: summary.missing.filter(m => m !== 'friends' || participants.length === 0),
+        source: `receipt via Claude${ms ? ` · ${(ms / 1000).toFixed(1)}s` : ''}`,
+      });
+    });
+  };
+
+  const openReceipt = () => {
+    if (!isAiReady(ai)) {
+      showAlert('Set up AI first', 'Receipt scanning uses Claude. Add your AI server URL and passphrase in Settings → AI.');
+      return;
+    }
+    if (Platform.OS === 'web') {
+      runReceipt('library'); // the browser's picker offers "Take Photo" on iPhone; must open inside the tap
+      return;
+    }
+    showAlert('Scan receipt', undefined, [
+      { text: 'Take Photo', onPress: () => runReceipt('camera') },
+      { text: 'Choose from Library', onPress: () => runReceipt('library') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const addParticipant = (name: string) => {
@@ -632,10 +690,13 @@ export default function NewTransactionScreen() {
         </View>
       </ScrollView>
 
+      <ReceiptButton onPress={openReceipt} bottom={saveBarHeight + Spacing.lg + 64 + Spacing.md} />
       <VoiceMicButton onPress={openVoice} bottom={saveBarHeight + Spacing.lg} />
+      <ProgressSheet visible={receipt.busy} label="Reading receipt with Claude…" />
       <VoiceSheet
         visible={voiceOpen}
         listening={voice.listening}
+        processing={voiceProcessing}
         transcript={voice.transcript}
         error={voice.error}
         onStop={voice.stop}

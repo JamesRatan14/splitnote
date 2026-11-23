@@ -30,6 +30,7 @@ function mulberry32(seed: number): () => number {
   };
 }
 const pct = (x: number) => (x * 100).toFixed(1) + '%';
+const titleKey = (t: string | undefined) => lc(t ?? '').replace(/\bat\b/g, ' ').replace(/\s+/g, ' ').trim();
 const lc = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
 
 // ---------- 1. Parsing ----------
@@ -40,7 +41,9 @@ function fieldOk(f: Field, exp: Partial<ParsedExpense>, got: ParsedExpense): boo
   switch (f) {
     case 'title':
       // lc() ignores punctuation, so separately reject stray punctuation tokens like "Dinner ."
-      return lc(exp.title ?? '') === lc(got.title ?? '') && !/(^|\s)[.!?,;:]+(\s|$)/.test(got.title ?? '');
+      // "Dinner at Dominos" ≡ "Dinner - Dominos" (house title style); lc() already drops punctuation.
+      // Separately reject stray punctuation tokens like "Dinner ." that lc() would hide.
+      return titleKey(exp.title) === titleKey(got.title) && !/(^|\s)[.!?,;:]+(\s|$)/.test(got.title ?? '');
     case 'amount':
     case 'tax':
       return Math.abs((exp[f] ?? 0) - (got[f] ?? 0)) < 0.005;

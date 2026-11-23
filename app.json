@@ -37,6 +37,14 @@
           "microphonePermission": "SplitNote uses the microphone so you can say an expense instead of typing it.",
           "speechRecognitionPermission": "SplitNote turns what you say into text to fill in the expense form."
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "SplitNote reads a receipt photo you pick so it can fill in the expense for you.",
+          "cameraPermission": "SplitNote uses the camera to photograph receipts and fill in the expense for you.",
+          "microphonePermission": "SplitNote uses the microphone so you can say an expense instead of typing it."
+        }
       ]
     ]
   }

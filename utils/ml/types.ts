@@ -31,6 +31,12 @@ export interface ParsedExpense {
   participants: string[];
   includeMe: boolean;
   splitType: SplitType;
+  /** Per-friend pre-tax shares when splitType is 'custom' (LLM path only). */
+  customAmounts?: Record<string, number>;
+  /** Extra context (LLM path; receipts put line items here). */
+  note?: string;
+  /** Category guess (LLM path). */
+  category?: Category;
 }
 
 /** Minimal slice of Transaction the models need; keeps them decoupled from storage. */

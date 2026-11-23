@@ -19,3 +19,9 @@ build/
 *.p12
 pairing*.plist
 *.mobiledevicepairing
+
+# python (server/)
+server/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
