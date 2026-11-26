@@ -42,6 +42,10 @@ class ExpenseExtraction(BaseModel):
     include_me: bool = Field(description="True if the user also shares the cost, false if they paid only on the friends' behalf.")
     split_type: Literal["equal", "custom"] = Field(description='"custom" only if per-person amounts are stated.')
     custom_amounts: list[CustomShare] = Field(description="Per-friend pre-tax shares when split_type is custom, else [].")
+    currency: Optional[str] = Field(
+        description="ISO 4217 code if the user named or clearly implied a currency other than US dollars "
+        "(by a currency word, symbol, or a number system used only for that currency); else null. Never convert."
+    )
     note: Optional[str] = Field(
         description="Only context the user explicitly stated that fits no other field (max ~15 words). "
         "Usually null. No guesses, no reasoning, no remarks about the transcript."

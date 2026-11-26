@@ -251,23 +251,32 @@ export interface FillResult {
   source: string;
   /** Set when nothing could be filled (e.g. the receipt could not be read). */
   error?: string;
+  /** Things to double-check (from Claude's warnings). */
+  warnings?: string[];
 }
 
 /** Small banner shown after voice / a receipt fills the form. */
-export function VoiceResultBanner({ heard, filled, missing, source, error, onDismiss }: FillResult & { onDismiss: () => void }) {
+export function VoiceResultBanner({ heard, filled, missing, source, error, warnings, onDismiss }: FillResult & { onDismiss: () => void }) {
   const colors = useColors();
   const nothing = filled.length === 0;
+  // amber when nothing was filled or Claude flagged something to double-check
+  const caution = nothing || (warnings?.length ?? 0) > 0;
   return (
-    <View style={[styles.banner, { backgroundColor: nothing ? colors.pendingLight : colors.primaryLight }]}>
-      <Ionicons name={nothing ? 'help-circle-outline' : 'checkmark-circle'} size={18} color={nothing ? colors.pending : colors.primary} />
+    <View style={[styles.banner, { backgroundColor: caution ? colors.pendingLight : colors.primaryLight }]}>
+      <Ionicons name={caution ? 'alert-circle-outline' : 'checkmark-circle'} size={18} color={caution ? colors.pending : colors.primary} />
       <View style={{ flex: 1 }}>
-        <Text style={[styles.bannerTitle, { color: nothing ? colors.pending : colors.primary }]}>
+        <Text style={[styles.bannerTitle, { color: caution ? colors.pending : colors.primary }]}>
           {error
             ? error
             : nothing
               ? "Couldn't pick out an expense. Try again or fill it in below."
               : `Filled ${filled.join(', ')}${missing.length ? ` · add ${missing.join(', ')}` : ' · check and save'}`}
         </Text>
+        {(warnings ?? []).map(w => (
+          <Text key={w} style={[styles.bannerWarning, { color: colors.pending }]} accessibilityRole="alert">
+            ⚠ {w}
+          </Text>
+        ))}
         {heard ? (
           <Text style={[styles.bannerHeard, { color: colors.textSecondary }]} numberOfLines={2}>
             Heard: “{heard}”
@@ -346,4 +355,5 @@ const styles = StyleSheet.create({
   },
   bannerTitle: { ...Typography.caption, fontWeight: '700' },
   bannerHeard: { ...Typography.caption, marginTop: 2 },
+  bannerWarning: { ...Typography.caption, fontWeight: '600', marginTop: 4 },
 });

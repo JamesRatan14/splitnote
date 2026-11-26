@@ -54,7 +54,7 @@ def env(monkeypatch):
 def expense(**over) -> ExpenseExtraction:
     base = dict(
         is_expense=True, title="Movie tickets", category="Entertainment", merchant=None, amount=30.0, tax=None,
-        mode=None, date=None, participants=["D"], include_me=True, split_type="equal", custom_amounts=[], note=None,
+        mode=None, date=None, participants=["D"], include_me=True, split_type="equal", custom_amounts=[], currency=None, note=None,
     )
     base.update(over)
     return ExpenseExtraction(**base)
@@ -262,3 +262,22 @@ def test_draft_is_validated():
     fake = FakeMessages(expense())
     r = make_app(fake).post("/parse", json={**BODY, "current": {"title": "x" * 81}}, headers=H)
     assert r.status_code == 422 and fake.calls == []
+
+
+# ---------------------------------------------------------------- warnings surfaced to the app
+
+
+def test_other_currency_is_flagged_not_converted():
+    r = make_app(FakeMessages(expense(amount=100000.0, currency="INR"))).post("/parse", json=BODY, headers=H).json()
+    assert r["expense"]["amount"] == 100000.0  # number kept as spoken
+    assert "other_currency:INR" in r["meta"]["warnings"]
+
+
+def test_usd_is_not_flagged():
+    r = make_app(FakeMessages(expense(currency="USD"))).post("/parse", json=BODY, headers=H).json()
+    assert not any(w.startswith("other_currency") for w in r["meta"]["warnings"])
+
+
+def test_not_an_expense_is_flagged():
+    r = make_app(FakeMessages(expense(is_expense=False))).post("/parse", json=BODY, headers=H).json()
+    assert "not_an_expense" in r["meta"]["warnings"]

@@ -11,6 +11,8 @@ export interface ParseResult {
   fallbackReason?: string;
   latencyMs?: number;
   model?: string;
+  /** Claude's doubts about this parse, as server warning codes. */
+  warnings?: string[];
 }
 
 /**
@@ -29,7 +31,7 @@ export async function parseExpense(
   if (isAiReady(ai)) {
     try {
       const { parsed, meta } = await aiParseExpense(ai, text, today, knownFriends, current);
-      return { parsed, source: 'llm', latencyMs: meta?.latencyMs, model: meta?.model };
+      return { parsed, source: 'llm', latencyMs: meta?.latencyMs, model: meta?.model, warnings: meta?.warnings };
     } catch (e) {
       const reason = e instanceof AiError ? e.message : 'AI unavailable';
       return { parsed: parseExpenseOffline(text, { today, knownFriends }), source: 'offline', fallbackReason: reason };

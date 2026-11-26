@@ -89,6 +89,8 @@ export interface AiMeta {
   model: string;
   latencyMs: number;
   costUsd: number;
+  /** Server warning codes, e.g. "not_an_expense", "other_currency:INR". */
+  warnings: string[];
 }
 
 export function readMeta(payload: unknown): AiMeta | null {
@@ -98,5 +100,8 @@ export function readMeta(payload: unknown): AiMeta | null {
     model: typeof m.model === 'string' ? m.model : 'unknown',
     latencyMs: typeof m.latencyMs === 'number' ? m.latencyMs : 0,
     costUsd: typeof m.costUsd === 'number' ? m.costUsd : 0,
+    warnings: Array.isArray(m.warnings)
+      ? m.warnings.filter((w): w is string => typeof w === 'string').slice(0, 10)
+      : [],
   };
 }

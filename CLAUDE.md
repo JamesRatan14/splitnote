@@ -162,6 +162,10 @@ The category hint is display-only (category is not stored yet — storing it wou
   answered ("via Claude · 1.8s" / "offline parser · <reason>").
 - Receipts: `expo-image-picker` (web: the browser picker, opened inside the tap) → `expo-image-manipulator` resize to 1568 px
   JPEG q0.7 → `/receipt`. Amount = subtotal + tip (tax stays separate); line items go to the note. Friends are never set from receipts.
+- **Warnings reach the user:** server `meta.warnings` (`not_an_expense`, `other_currency:<ISO>`, `amount_out_of_range`,
+  `tax_dropped`, `custom_split_dropped`, `totals_do_not_add_up`, `not_a_receipt`) → `utils/ai/warnings.ts` → amber banner lines.
+  Currency: the app records USD; Claude reports another currency (incl. number systems tied to one, e.g. lakh/crore) in
+  `currency` and **never converts**; the number is kept as spoken and the user is told to convert.
 - Title style: 2-5 words keeping the most specific thing named — named movie/artist/team/event first ("Iron Man movie",
   "Taylor Swift concert"), `"<What> - <Place>"` for a named restaurant/store ("Dinner - Olive Garden"), destinations kept
   ("Uber to airport"), generic only when nothing specific was said. Claude fixes obvious speech-to-text mishearings of well-known

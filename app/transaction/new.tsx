@@ -27,6 +27,7 @@ import { FillResult, ProgressSheet, ReceiptButton, VoiceMicButton, VoiceResultBa
 import { useAiSettings } from '../../hooks/useAiSettings';
 import { useReceiptScan } from '../../hooks/useReceiptScan';
 import { DraftForAi, isAiReady } from '../../utils/ai/client';
+import { describeWarnings } from '../../utils/ai/warnings';
 import type { ParsedExpense } from '../../utils/ml';
 import { useVoiceInput } from '../../hooks/useVoiceInput';
 import { describeFilled, parseExpense, ParseResult } from '../../utils/parseExpense';
@@ -271,7 +272,7 @@ export default function NewTransactionScreen() {
       parseExpense(heard, knownFriends, ai, currentDraft())
         .then(r => {
           if (session !== voiceSession.current) return; // cancelled meanwhile
-          setVoiceResult({ heard, ...applyParsed(r.parsed), source: sourceLabel(r) });
+          setVoiceResult({ heard, ...applyParsed(r.parsed), source: sourceLabel(r), warnings: describeWarnings(r.warnings ?? []) });
         })
         .finally(() => {
           if (session !== voiceSession.current) return;
@@ -310,6 +311,7 @@ export default function NewTransactionScreen() {
       const summary = applyParsed(out.result.parsed);
       const ms = out.result.meta?.latencyMs;
       setVoiceResult({
+        warnings: describeWarnings(out.result.meta?.warnings ?? []),
         filled: summary.filled,
         // a receipt never names friends; only ask for them if none are added yet
         missing: summary.missing.filter(m => m !== 'friends' || participants.length === 0),

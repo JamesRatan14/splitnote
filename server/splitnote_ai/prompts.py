@@ -18,6 +18,9 @@ filler words. When the detail is where it was bought rather than what, use "<Wha
 no specific detail, use a short generic phrase for what was bought. Capitalise proper names. Speech-to-text often mishears names; correct one only when the intended \
 well-known name is unambiguous, otherwise keep the words as heard. Never put amounts, dates or the \
 friends' names in the title.
+- Amounts are recorded in US dollars. If the user names or clearly implies another currency, or uses a \
+number system that belongs to another currency, put the number exactly as spoken in amount (converted to \
+digits, without changing its value) and set currency to that currency's code. Never convert between currencies.
 - amount is the pre-tax subtotal the user paid. If only a total is given, use the total. If a total and \
 the tax are both given, amount = total - tax. Use null when no amount is said; never guess one.
 - participants are the friends who share the cost, never the user. When a spoken name matches someone in \

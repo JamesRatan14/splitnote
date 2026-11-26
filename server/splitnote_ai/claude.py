@@ -235,6 +235,10 @@ def sanitize_expense(x: ExpenseExtraction, today: str, known_friends: list[str])
         if split_type != "custom":
             warnings.append("custom_split_dropped")
 
+    currency = (x.currency or "").strip().upper()
+    if currency and currency not in ("USD", "US$", "$"):
+        warnings.append(f"other_currency:{currency[:3]}")
+
     note = (x.note or "").strip()[:200] or None
     return (
         ExpenseOut(
