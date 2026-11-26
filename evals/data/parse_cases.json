@@ -57,5 +57,7 @@
  {"input":"Paid for groceries at Wegmans, $82, me and Maya split it","expected":{"title":"Groceries - Wegmans","amount":82,"participants":["Maya"],"includeMe":true},"tags":["natural"]},
  {"input":"Uber to the airport was $38, split between me, Sam and Alex","expected":{"title":"Uber to the airport","amount":38,"participants":["Sam","Alex"],"includeMe":true},"tags":["natural"]},
  {"input":"Got coffee for Priya and me, $11 on Apple Pay","expected":{"title":"Coffee","amount":11,"mode":"Apple Pay","participants":["Priya"],"includeMe":true},"tags":["natural"]},
- {"input":"My friend Josh and I went bowling, I paid $60","expected":{"title":"Bowling","amount":60,"participants":["Josh"],"includeMe":true},"tags":["natural"]}
+ {"input":"My friend Josh and I went bowling, I paid $60","expected":{"title":"Bowling","amount":60,"participants":["Josh"],"includeMe":true},"tags":["natural"]},
+ {"input":"Dinner 40 with my roommate Sam","expected":{"title":"Dinner","amount":40,"participants":["Sam"],"includeMe":false},"tags":["natural"]},
+ {"input":"Lunch 20 with my friends Ana and Ben","expected":{"title":"Lunch","amount":20,"participants":["Ana","Ben"],"includeMe":false},"tags":["natural"]}
 ]

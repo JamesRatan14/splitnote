@@ -16,6 +16,11 @@ const NAME_STOP = new Set([
   'tonight', 'this', 'after', 'before', 'because', 'cause',
 ]);
 
+const RELATION_WORDS = new Set([
+  'my', 'our', 'friend', 'friends', 'roommate', 'roommates', 'buddy', 'buddies', 'coworker', 'coworkers',
+  'colleague', 'colleagues', 'brother', 'sister', 'cousin', 'cousins', 'mate', 'mates',
+]);
+
 function pad(n: number): string {
   return String(n).padStart(2, '0');
 }
@@ -161,6 +166,11 @@ function extractParticipants(text: string, known: string[]): { names: string[]; 
     const lw = w.toLowerCase();
     if (lw === 'and' || lw === '&') {
       flush();
+      consumed++;
+      continue;
+    }
+    // "with my friend D", "with my roommates Ana and Ben": skip the relation words, keep the names
+    if (currentParts.length === 0 && RELATION_WORDS.has(lw)) {
       consumed++;
       continue;
     }

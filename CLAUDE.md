@@ -163,7 +163,7 @@ The category hint is display-only (category is not stored yet — storing it wou
   accuracy-when-shown at the UI threshold), participant recall@3 vs frequency baseline, mode accuracy vs baseline
   (+ accuracy-when-shown), outlier precision/recall, duplicate sanity check — then a **regression-gate table**.
   Any gate below its floor → exit code 1 → CI (and the web deploy) fails.
-- Data: `evals/data/parse_cases.json` (59 labeled phrases; `"tags":["hard"]` = needs LLM, `"dictation"` = iPhone-dictation style, `"natural"` = rambling speech incl. the owner's real example), `evals/data/categories.json` (56 held-out titles).
+- Data: `evals/data/parse_cases.json` (61 labeled phrases; `"tags":["hard"]` = needs LLM, `"dictation"` = iPhone-dictation style, `"natural"` = rambling speech incl. the owner's real example), `evals/data/categories.json` (56 held-out titles).
 - **Honesty rules (do not break):**
   - The parser's 100% on non-hard cases is a *development-set* score (cases and rules were written together; the 10 dictation
     cases were written while fixing the punctuation bug). Not real-world accuracy.
