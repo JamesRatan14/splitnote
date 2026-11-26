@@ -27,8 +27,7 @@ class CustomShare(BaseModel):
 class ExpenseExtraction(BaseModel):
     is_expense: bool = Field(description="False if the text does not describe something the user paid for.")
     title: str = Field(
-        description='2-5 words, keeping the most specific thing named: "Iron Man movie", "Taylor Swift concert", '
-        '"Dinner - Olive Garden", "Uber to airport"; generic only if nothing specific was said ("Movie tickets"). '
+        description="2-5 words keeping the most specific thing named (see the title rules). "
         "Never include amounts, dates or friends' names."
     )
     category: Category
@@ -38,9 +37,9 @@ class ExpenseExtraction(BaseModel):
     )
     tax: Optional[float] = Field(description="Tax in USD if mentioned (convert a percentage using the amount), else null.")
     mode: Optional[PaymentMode] = Field(description="Payment method if stated; Venmo/PayPal/Cash App -> Other. Else null.")
-    date: Optional[str] = Field(description="YYYY-MM-DD if a date is stated or implied (e.g. 'yesterday'), else null.")
+    date: Optional[str] = Field(description="YYYY-MM-DD if a date is stated or implied by a relative day, else null.")
     participants: list[str] = Field(description="Friends sharing the cost. Never the user. Only actual names.")
-    include_me: bool = Field(description="True if the user also shares the cost (e.g. 'split between us', 'both of us').")
+    include_me: bool = Field(description="True if the user also shares the cost, false if they paid only on the friends' behalf.")
     split_type: Literal["equal", "custom"] = Field(description='"custom" only if per-person amounts are stated.')
     custom_amounts: list[CustomShare] = Field(description="Per-friend pre-tax shares when split_type is custom, else [].")
     note: Optional[str] = Field(
@@ -57,7 +56,7 @@ class ReceiptItem(BaseModel):
 class ReceiptExtraction(BaseModel):
     is_receipt: bool = Field(description="False if the image is not a purchase receipt or bill.")
     merchant: Optional[str] = Field(description="Store/restaurant name as printed, in Title Case, else null.")
-    title: str = Field(description='"<What> - <Merchant>", e.g. "Food - Olive Garden", "Groceries - Wegmans".')
+    title: str = Field(description='"<What was bought> - <Merchant>".')
     category: Category
     date: Optional[str] = Field(description="Purchase date as YYYY-MM-DD, else null.")
     subtotal: Optional[float] = Field(description="Pre-tax subtotal in USD, else null.")
@@ -65,7 +64,7 @@ class ReceiptExtraction(BaseModel):
     tip: Optional[float] = Field(description="Tip/gratuity in USD, else null.")
     total: Optional[float] = Field(description="Grand total paid in USD, else null.")
     mode: Optional[PaymentMode] = Field(
-        description="Only if the receipt clearly shows it (e.g. CASH, Apple Pay, DEBIT). A card brand alone -> Credit Card. Else null."
+        description="Only if the receipt clearly shows the payment method; a card brand alone means Credit Card. Else null."
     )
     items: list[ReceiptItem] = Field(description="Line items (max 30), names shortened to a few words.")
 

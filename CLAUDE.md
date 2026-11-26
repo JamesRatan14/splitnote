@@ -159,7 +159,10 @@ The category hint is display-only (category is not stored yet — storing it wou
   "Taylor Swift concert"), `"<What> - <Place>"` for a named restaurant/store ("Dinner - Olive Garden"), destinations kept
   ("Uber to airport"), generic only when nothing specific was said. Claude fixes obvious speech-to-text mishearings of well-known
   names. The offline parser can only do the "<What> - <Place>" part; `"specific-title"` eval cases (tagged hard) measure the rest.
-- Tests: `server/tests/test_app.py` (20, fake client — run in CI by `.github/workflows/server-tests.yml`).
+- Tests: `server/tests/test_app.py` (20, fake client) + `test_prompt_hygiene.py` (2) — run in CI by `.github/workflows/server-tests.yml`.
+- **Prompt hygiene (do not break):** prompts and schema descriptions contain rules and `<placeholders>` only — no real names,
+  places, titles or sentences. `test_prompt_hygiene.py` fails if any proper noun or 5-word phrase from
+  `evals/data/parse_cases.json` appears in text Claude sees (that would inflate the LLM eval). No hardcoded outputs anywhere.
 
 ### 5.3 Evals — `evals/`
 - `npm run eval` prints parser field-level + exact-match accuracy, category accuracy vs majority baseline (+ hint coverage /
