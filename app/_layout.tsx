@@ -26,6 +26,15 @@ export default function RootLayout() {
     initAutoBackup().catch(console.error);
   }, []);
 
+  // Web: paint the page itself in the app background, so no white strip shows around the app
+  // (e.g. under the home indicator in iOS home-screen mode).
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      document.documentElement.style.backgroundColor = colors.background;
+      document.body.style.backgroundColor = colors.background;
+    }
+  }, [colors.background]);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <Stack

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -71,6 +71,8 @@ export default function NewTransactionScreen() {
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [voiceResult, setVoiceResult] = useState<FillResult | null>(null);
   const [voiceProcessing, setVoiceProcessing] = useState(false);
+  // bumps on every open/cancel, so a late answer from a cancelled session is ignored
+  const voiceSession = useRef(0);
   const { settings: ai } = useAiSettings();
   const receipt = useReceiptScan(ai);
   const [saveBarHeight, setSaveBarHeight] = useState(0);
@@ -245,10 +247,15 @@ export default function NewTransactionScreen() {
   const voice = useVoiceInput(
     useCallback(
       (heard: string) => {
+        const session = voiceSession.current;
         setVoiceProcessing(true);
         parseExpense(heard, knownFriends, ai)
-          .then(r => setVoiceResult({ heard, ...applyParsed(r.parsed), source: sourceLabel(r) }))
+          .then(r => {
+            if (session !== voiceSession.current) return; // cancelled meanwhile
+            setVoiceResult({ heard, ...applyParsed(r.parsed), source: sourceLabel(r) });
+          })
           .finally(() => {
+            if (session !== voiceSession.current) return;
             setVoiceProcessing(false);
             setVoiceOpen(false);
           });
@@ -260,12 +267,14 @@ export default function NewTransactionScreen() {
   );
 
   const openVoice = () => {
+    voiceSession.current += 1;
     setVoiceResult(null);
     setVoiceOpen(true);
     voice.start(); // synchronous inside the tap (required by Safari)
   };
 
   const closeVoice = () => {
+    voiceSession.current += 1;
     voice.cancel();
     setVoiceProcessing(false);
     setVoiceOpen(false);

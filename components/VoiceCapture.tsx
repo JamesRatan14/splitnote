@@ -3,7 +3,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
-  Modal,
+  Pressable,
   Platform,
   StyleSheet,
   Text,
@@ -57,14 +57,15 @@ export function ProgressSheet({ visible, label }: { visible: boolean; label: str
   const colors = useColors();
   const insets = useSafeAreaInsets();
   return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.backdrop}>
+    visible ? (
+      <View style={styles.overlay} accessibilityViewIsModal>
+        <View style={[StyleSheet.absoluteFill, styles.dim]} />
         <View style={[styles.sheet, styles.progressSheet, { backgroundColor: colors.surface, paddingBottom: insets.bottom + Spacing.xl }]}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.status, { color: colors.text }]}>{label}</Text>
         </View>
       </View>
-    </Modal>
+    ) : null
   );
 }
 
@@ -87,7 +88,9 @@ export function VoiceSheet({ visible, listening, processing, transcript, error, 
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (!listening) {
+    // The pulsing ring runs on the native driver only; on web a per-frame JS animation competes with
+    // speech recognition on the main thread, so the ring is shown static there.
+    if (!listening || Platform.OS === 'web') {
       pulse.stopAnimation();
       pulse.setValue(0);
       return;
@@ -97,7 +100,7 @@ export function VoiceSheet({ visible, listening, processing, transcript, error, 
         toValue: 1,
         duration: 1200,
         easing: Easing.out(Easing.ease),
-        useNativeDriver: Platform.OS !== 'web',
+        useNativeDriver: true,
       })
     );
     loop.start();
@@ -120,31 +123,33 @@ export function VoiceSheet({ visible, listening, processing, transcript, error, 
           : 'Starting…';
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onCancel} accessibilityLabel="Cancel voice input">
-        <TouchableOpacity
-          activeOpacity={1}
-          onPress={() => undefined}
-          style={[styles.sheet, { backgroundColor: colors.surface, paddingBottom: insets.bottom + Spacing.xl }]}
-        >
+    visible ? (
+      // A plain overlay inside the screen (not RN <Modal>): on iOS home-screen web apps the Modal
+      // portal can be laid out against the wrong viewport, leaving its buttons untappable.
+      <View style={styles.overlay} accessibilityViewIsModal>
+        <Pressable style={[StyleSheet.absoluteFill, styles.dim]} onPress={onCancel} accessibilityLabel="Cancel voice input" />
+        <View style={[styles.sheet, { backgroundColor: colors.surface, paddingBottom: insets.bottom + Spacing.xl }]}>
           <View style={styles.micWrap}>
             {listening && (
               <Animated.View
+                pointerEvents="none"
                 style={[
                   styles.ring,
-                  { backgroundColor: colors.primary, opacity: ringOpacity, transform: [{ scale: ringScale }] },
+                  Platform.OS === 'web'
+                    ? { backgroundColor: colors.primary, opacity: 0.25, transform: [{ scale: 1.35 }] }
+                    : { backgroundColor: colors.primary, opacity: ringOpacity, transform: [{ scale: ringScale }] },
                 ]}
               />
             )}
-            <TouchableOpacity
+            <Pressable
               onPress={error ? onRetry : listening ? onStop : onRetry}
-              activeOpacity={0.85}
+              hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel={error ? 'Try again' : listening ? 'Stop listening' : 'Start listening'}
-              style={[styles.micCircle, { backgroundColor: error ? colors.surfaceHigh : colors.primary }]}
+              style={({ pressed }) => [styles.micCircle, { backgroundColor: error ? colors.surfaceHigh : colors.primary, opacity: pressed ? 0.8 : 1 }]}
             >
               <Ionicons name={error ? 'refresh' : 'mic'} size={36} color={error ? colors.text : colors.background} />
-            </TouchableOpacity>
+            </Pressable>
           </View>
 
           {processing ? <ActivityIndicator color={colors.primary} /> : null}
@@ -162,18 +167,18 @@ export function VoiceSheet({ visible, listening, processing, transcript, error, 
           ) : null}
 
           <View style={styles.actions}>
-            <TouchableOpacity onPress={onCancel} style={styles.actionBtn} accessibilityRole="button">
+            <Pressable onPress={onCancel} hitSlop={12} style={styles.actionBtn} accessibilityRole="button" accessibilityLabel="Cancel">
               <Text style={[styles.actionText, { color: colors.textSecondary }]}>Cancel</Text>
-            </TouchableOpacity>
+            </Pressable>
             {listening ? (
-              <TouchableOpacity onPress={onStop} style={styles.actionBtn} accessibilityRole="button">
+              <Pressable onPress={onStop} hitSlop={12} style={styles.actionBtn} accessibilityRole="button" accessibilityLabel="Done">
                 <Text style={[styles.actionText, { color: colors.primary, fontWeight: '700' }]}>Done</Text>
-              </TouchableOpacity>
+              </Pressable>
             ) : null}
           </View>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
+        </View>
+      </View>
+    ) : null
   );
 }
 
@@ -246,7 +251,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   progressSheet: { minHeight: 200, justifyContent: 'center' },
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
+  overlay: { ...StyleSheet.absoluteFillObject, zIndex: 1000, elevation: 1000, justifyContent: 'flex-end' },
+  dim: { backgroundColor: 'rgba(0,0,0,0.55)' },
   sheet: {
     borderTopLeftRadius: Radius.xxl,
     borderTopRightRadius: Radius.xxl,
@@ -264,7 +270,7 @@ const styles = StyleSheet.create({
   example: { ...Typography.caption, textAlign: 'center' },
   error: { ...Typography.body, textAlign: 'center' },
   actions: { flexDirection: 'row', gap: Spacing.xxl, marginTop: Spacing.sm },
-  actionBtn: { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg },
+  actionBtn: { paddingVertical: Spacing.md, paddingHorizontal: Spacing.xl, minWidth: 88, alignItems: 'center' },
   actionText: { ...Typography.body },
   banner: {
     flexDirection: 'row',

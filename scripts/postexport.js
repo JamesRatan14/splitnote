@@ -16,6 +16,8 @@ const tags = [
   '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
   `<link rel="manifest" href="${base}/manifest.json">`,
   `<link rel="apple-touch-icon" href="${base}/apple-touch-icon.png">`,
+  // page background = app background, so no white strip shows before/around the app (iOS home-screen mode)
+  '<style>html,body{background-color:#080B12;}</style>',
 ].join('\n    ');
 
 if (!html.includes('apple-touch-icon')) html = html.replace('</head>', `    ${tags}\n  </head>`);
