@@ -59,5 +59,8 @@
  {"input":"Got coffee for Priya and me, $11 on Apple Pay","expected":{"title":"Coffee","amount":11,"mode":"Apple Pay","participants":["Priya"],"includeMe":true},"tags":["natural"]},
  {"input":"My friend Josh and I went bowling, I paid $60","expected":{"title":"Bowling","amount":60,"participants":["Josh"],"includeMe":true},"tags":["natural"]},
  {"input":"Dinner 40 with my roommate Sam","expected":{"title":"Dinner","amount":40,"participants":["Sam"],"includeMe":false},"tags":["natural"]},
- {"input":"Lunch 20 with my friends Ana and Ben","expected":{"title":"Lunch","amount":20,"participants":["Ana","Ben"],"includeMe":false},"tags":["natural"]}
+ {"input":"Lunch 20 with my friends Ana and Ben","expected":{"title":"Lunch","amount":20,"participants":["Ana","Ben"],"includeMe":false},"tags":["natural"]},
+ {"input":"Paid 30 dollars for Iron Man movie tickets for me and D","expected":{"title":"Iron Man movie","amount":30,"participants":["D"],"includeMe":true},"tags":["hard","specific-title"]},
+ {"input":"Taylor Swift concert tickets 240 dollars with Priya","expected":{"title":"Taylor Swift concert","amount":240,"participants":["Priya"],"includeMe":false},"tags":["hard","specific-title"]},
+ {"input":"Uber to the airport 38 dollars split between me and Sam","expected":{"title":"Uber to airport","amount":38,"participants":["Sam"],"includeMe":true},"tags":["hard","specific-title"]}
 ]

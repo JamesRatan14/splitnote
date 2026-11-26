@@ -155,7 +155,10 @@ The category hint is display-only (category is not stored yet — storing it wou
   answered ("via Claude · 1.8s" / "offline parser · <reason>").
 - Receipts: `expo-image-picker` (web: the browser picker, opened inside the tap) → `expo-image-manipulator` resize to 1568 px
   JPEG q0.7 → `/receipt`. Amount = subtotal + tip (tax stays separate); line items go to the note. Friends are never set from receipts.
-- Title style (both paths): `"<What> - <Merchant>"` when a place is known (e.g. "Food - Olive Garden"), else a short noun phrase.
+- Title style: 2-5 words keeping the most specific thing named — named movie/artist/team/event first ("Iron Man movie",
+  "Taylor Swift concert"), `"<What> - <Place>"` for a named restaurant/store ("Dinner - Olive Garden"), destinations kept
+  ("Uber to airport"), generic only when nothing specific was said. Claude fixes obvious speech-to-text mishearings of well-known
+  names. The offline parser can only do the "<What> - <Place>" part; `"specific-title"` eval cases (tagged hard) measure the rest.
 - Tests: `server/tests/test_app.py` (20, fake client — run in CI by `.github/workflows/server-tests.yml`).
 
 ### 5.3 Evals — `evals/`
@@ -163,7 +166,7 @@ The category hint is display-only (category is not stored yet — storing it wou
   accuracy-when-shown at the UI threshold), participant recall@3 vs frequency baseline, mode accuracy vs baseline
   (+ accuracy-when-shown), outlier precision/recall, duplicate sanity check — then a **regression-gate table**.
   Any gate below its floor → exit code 1 → CI (and the web deploy) fails.
-- Data: `evals/data/parse_cases.json` (61 labeled phrases; `"tags":["hard"]` = needs LLM, `"dictation"` = iPhone-dictation style, `"natural"` = rambling speech incl. the owner's real example), `evals/data/categories.json` (56 held-out titles).
+- Data: `evals/data/parse_cases.json` (64 labeled phrases; `"tags":["hard"]` = needs LLM, `"dictation"` = iPhone-dictation style, `"natural"` = rambling speech incl. the owner's real example), `evals/data/categories.json` (56 held-out titles).
 - **Honesty rules (do not break):**
   - The parser's 100% on non-hard cases is a *development-set* score (cases and rules were written together; the 10 dictation
     cases were written while fixing the punctuation bug). Not real-world accuracy.

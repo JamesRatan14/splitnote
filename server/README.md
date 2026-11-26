@@ -68,7 +68,7 @@ SPLITNOTE_PASSPHRASE=dev ANTHROPIC_API_KEY=... .venv/bin/uvicorn splitnote_ai.ma
 
 ```bash
 ANTHROPIC_API_KEY=... .venv/bin/python evals/eval_llm.py          # prints the cost estimate only
-ANTHROPIC_API_KEY=... .venv/bin/python evals/eval_llm.py --yes    # runs the 61 labelled cases (~$0.73 on Opus 5.5)
+ANTHROPIC_API_KEY=... .venv/bin/python evals/eval_llm.py --yes    # runs the 64 labelled cases (~$0.77 on Opus 5.5)
 ```
 
 This runs the same cases and field rules as `npm run eval`. It reports accuracy by tag (plain / dictation / natural / hard),

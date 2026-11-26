@@ -27,8 +27,9 @@ class CustomShare(BaseModel):
 class ExpenseExtraction(BaseModel):
     is_expense: bool = Field(description="False if the text does not describe something the user paid for.")
     title: str = Field(
-        description='Short title. With a merchant/place: "<What> - <Merchant>" e.g. "Food - Olive Garden". '
-        'Without: 1-3 words e.g. "Movie tickets". Never include amounts or friends\' names.'
+        description='2-5 words, keeping the most specific thing named: "Iron Man movie", "Taylor Swift concert", '
+        '"Dinner - Olive Garden", "Uber to airport"; generic only if nothing specific was said ("Movie tickets"). '
+        "Never include amounts, dates or friends' names."
     )
     category: Category
     merchant: Optional[str] = Field(description="Merchant or place name if mentioned, else null.")
