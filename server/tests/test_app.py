@@ -237,3 +237,28 @@ def test_receipt_totals_mismatch_warns():
 def test_receipt_without_subtotal_uses_total_minus_tax():
     r = make_app(FakeMessages(receipt(subtotal=None, tip=None))).post("/receipt", json=RB, headers=H).json()
     assert r["expense"]["amount"] == round(79.55 - 5.15, 2)
+
+
+# ---------------------------------------------------------------- editing an existing draft by voice
+
+
+def test_current_draft_is_sent_for_edits():
+    fake = FakeMessages(expense(amount=50.0))
+    body = {**BODY, "text": "make it fifty dollars", "current": {"title": "Movie tickets", "amount": 30, "participants": ["D"], "includeMe": True}}
+    r = make_app(fake).post("/parse", json=body, headers=H)
+    assert r.status_code == 200
+    user_text = fake.calls[0]["messages"][0]["content"][0]["text"]
+    assert "<current_draft>" in user_text and '"amount": 30.0' in user_text and '"participants": ["D"]' in user_text
+    assert user_text.index("<current_draft>") < user_text.index("<transcript>")
+
+
+def test_empty_draft_is_not_sent():
+    fake = FakeMessages(expense())
+    make_app(fake).post("/parse", json={**BODY, "current": {"participants": [], "includeMe": False}}, headers=H)
+    assert "<current_draft>" not in fake.calls[0]["messages"][0]["content"][0]["text"]
+
+
+def test_draft_is_validated():
+    fake = FakeMessages(expense())
+    r = make_app(fake).post("/parse", json={**BODY, "current": {"title": "x" * 81}}, headers=H)
+    assert r.status_code == 422 and fake.calls == []

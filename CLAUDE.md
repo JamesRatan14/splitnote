@@ -129,6 +129,13 @@ Suggestions are **never applied without a tap**; warnings never block saving.
 (the SDK-54 line — newer majors track SDK 56+). Native = iOS SFSpeechRecognizer (Info.plist strings via the config plugin
 in `app.json`; friends' names passed as `contextualStrings`); web = the browser's `SpeechRecognition`.
 **On web `start()` must run synchronously inside the tap** (Safari's user-gesture rule) — don't put an `await` before it.
+Web drives `SpeechRecognition` directly (not the library): continuous mode + our own timers (8 s no-speech, 3 s silence
+after speech, 30 s max, 1.5 s grace then `abort()` if `stop()` is ignored — seen on iOS home-screen apps). One shared
+recogniser per page; it is discarded (fresh one next time) when a session fails to start, hears nothing, or had to be
+forced off. Every handler checks it belongs to the current session and ignores end/error before its own `start`.
+On failure the sheet offers a **"type it instead"** box (keyboard dictation works there) that goes through the same path.
+**Edit by voice:** the form's current contents are sent as `current` → `<current_draft>` so Claude applies a correction
+("make it 50", "add <name>") and keeps the rest; empty forms send no draft.
 On end, the transcript → `utils/parseExpense.ts` `parseExpense()` → fills only the fields it found (participants replaced,
 others overwritten) → `VoiceResultBanner` shows "Filled …" + "Heard: …". Nothing saves without the user tapping Save.
 `parseExpense()` is the single plug-in point for the LLM proxy (keep it async; return `source`).

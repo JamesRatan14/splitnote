@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
   Easing,
   Pressable,
+  TextInput,
   Platform,
   StyleSheet,
   Text,
@@ -79,12 +80,37 @@ interface VoiceSheetProps {
   onStop: () => void;
   onCancel: () => void;
   onRetry: () => void;
+  /** Fallback when voice fails: typed (or keyboard-dictated) text goes through the same path. */
+  onTypeSubmit?: (text: string) => void;
 }
 
 /** Google-style listening sheet: pulsing mic, live transcript, Done / Cancel. */
-export function VoiceSheet({ visible, listening, processing, transcript, error, onStop, onCancel, onRetry }: VoiceSheetProps) {
+export function VoiceSheet({
+  visible,
+  listening,
+  processing,
+  transcript,
+  error,
+  onStop,
+  onCancel,
+  onRetry,
+  onTypeSubmit,
+}: VoiceSheetProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const [typed, setTyped] = useState('');
+  const [typing, setTyping] = useState(false);
+  useEffect(() => {
+    if (!visible) {
+      setTyped('');
+      setTyping(false);
+    }
+  }, [visible]);
+  const submitTyped = () => {
+    const t = typed.trim();
+    if (t.length >= 2 && onTypeSubmit) onTypeSubmit(t);
+  };
+  const showTyping = !!error && !processing && !!onTypeSubmit;
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -110,10 +136,10 @@ export function VoiceSheet({ visible, listening, processing, transcript, error, 
   const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.8] });
   const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0] });
 
-  const status = error
-    ? null
-    : processing
-      ? 'Understanding…'
+  const status = processing
+    ? 'Understanding…'
+    : error
+      ? null
       : listening
         ? transcript
           ? null
@@ -126,9 +152,16 @@ export function VoiceSheet({ visible, listening, processing, transcript, error, 
     visible ? (
       // A plain overlay inside the screen (not RN <Modal>): on iOS home-screen web apps the Modal
       // portal can be laid out against the wrong viewport, leaving its buttons untappable.
-      <View style={styles.overlay} accessibilityViewIsModal>
+      <View style={[styles.overlay, typing && styles.overlayTop]} accessibilityViewIsModal>
         <Pressable style={[StyleSheet.absoluteFill, styles.dim]} onPress={onCancel} accessibilityLabel="Cancel voice input" />
-        <View style={[styles.sheet, { backgroundColor: colors.surface, paddingBottom: insets.bottom + Spacing.xl }]}>
+        <View
+          style={[
+            styles.sheet,
+            { backgroundColor: colors.surface, paddingBottom: insets.bottom + Spacing.xl },
+            // keep the text box above the on-screen keyboard
+            typing && { paddingTop: insets.top + Spacing.lg, paddingBottom: Spacing.xl, borderRadius: 0, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+          ]}
+        >
           <View style={styles.micWrap}>
             {listening && (
               <Animated.View
@@ -159,7 +192,34 @@ export function VoiceSheet({ visible, listening, processing, transcript, error, 
               {transcript}
             </Text>
           ) : null}
-          {error ? <Text style={[styles.error, { color: colors.pending }]}>{error}</Text> : null}
+          {error && !processing ? <Text style={[styles.error, { color: colors.pending }]}>{error}</Text> : null}
+          {showTyping ? (
+            <View style={styles.typeRow}>
+              <TextInput
+                value={typed}
+                onChangeText={setTyped}
+                placeholder="Or type it here"
+                placeholderTextColor={colors.textSecondary}
+                onSubmitEditing={submitTyped}
+                // Stay at the top once typing starts (until the sheet closes): moving back on blur would
+                // shift the Fill button out from under the finger mid-tap.
+                onFocus={() => setTyping(true)}
+                returnKeyType="done"
+                maxLength={600}
+                style={[styles.typeInput, { color: colors.text, backgroundColor: colors.surfaceHigh, borderColor: colors.border }]}
+                accessibilityLabel="Type the expense"
+              />
+              <Pressable
+                onPress={submitTyped}
+                hitSlop={8}
+                style={[styles.typeButton, { backgroundColor: typed.trim().length >= 2 ? colors.primary : colors.surfaceHigh }]}
+                accessibilityRole="button"
+                accessibilityLabel="Fill from typed text"
+              >
+                <Text style={[styles.typeButtonText, { color: typed.trim().length >= 2 ? colors.background : colors.textSecondary }]}>Fill</Text>
+              </Pressable>
+            </View>
+          ) : null}
           {!transcript && !error ? (
             <Text style={[styles.example, { color: colors.textSecondary }]}>
               Try “Dinner 84 dollars with Rahul and Priya, paid with Zelle”
@@ -251,7 +311,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   progressSheet: { minHeight: 200, justifyContent: 'center' },
+  typeRow: { flexDirection: 'row', alignSelf: 'stretch', gap: Spacing.sm },
+  typeInput: { flex: 1, ...Typography.body, borderWidth: 1, borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.md },
+  typeButton: { borderRadius: Radius.md, paddingHorizontal: Spacing.lg, alignItems: 'center', justifyContent: 'center' },
+  typeButtonText: { ...Typography.body, fontWeight: '700' },
   overlay: { ...StyleSheet.absoluteFillObject, zIndex: 1000, elevation: 1000, justifyContent: 'flex-end' },
+  overlayTop: { justifyContent: 'flex-start' },
   dim: { backgroundColor: 'rgba(0,0,0,0.55)' },
   sheet: {
     borderTopLeftRadius: Radius.xxl,

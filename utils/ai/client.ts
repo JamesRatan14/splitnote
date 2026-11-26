@@ -78,11 +78,37 @@ function toResult(body: unknown): AiResult {
   return { parsed, meta: readMeta(body) };
 }
 
-export async function aiParseExpense(s: AiSettings, text: string, today: string, knownFriends: string[]): Promise<AiResult> {
+/** What is already in the form; lets a voice command edit it ("make it 50", "add <name>"). */
+export interface DraftForAi {
+  title?: string;
+  amount?: number;
+  tax?: number;
+  mode?: string;
+  date?: string;
+  participants: string[];
+  includeMe: boolean;
+  note?: string;
+}
+
+export async function aiParseExpense(
+  s: AiSettings,
+  text: string,
+  today: string,
+  knownFriends: string[],
+  current?: DraftForAi
+): Promise<AiResult> {
   const body = await request(
     s,
     '/parse',
-    { method: 'POST', body: JSON.stringify({ text: text.slice(0, 600), today, knownFriends: knownFriends.slice(0, 200) }) },
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        text: text.slice(0, 600),
+        today,
+        knownFriends: knownFriends.slice(0, 200),
+        ...(current ? { current } : {}),
+      }),
+    },
     20_000
   );
   return toResult(body);

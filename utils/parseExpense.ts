@@ -1,6 +1,6 @@
 import { ParsedExpense, parseExpenseOffline } from './ml';
 import { todayISO } from './formatters';
-import { AiError, AiSettings, aiParseExpense, isAiReady } from './ai/client';
+import { AiError, AiSettings, aiParseExpense, DraftForAi, isAiReady } from './ai/client';
 
 export type ParseSource = 'llm' | 'offline';
 
@@ -18,11 +18,17 @@ export interface ParseResult {
  * Claude (via the SplitNote proxy) first; on any failure — not set up, offline, timeout, refusal,
  * invalid response — the on-device rule parser fills in. The caller shows which one answered.
  */
-export async function parseExpense(text: string, knownFriends: string[], ai?: AiSettings | null): Promise<ParseResult> {
+export async function parseExpense(
+  text: string,
+  knownFriends: string[],
+  ai?: AiSettings | null,
+  /** The form's current contents, so Claude can apply an edit instead of starting over. */
+  current?: DraftForAi
+): Promise<ParseResult> {
   const today = todayISO();
   if (isAiReady(ai)) {
     try {
-      const { parsed, meta } = await aiParseExpense(ai, text, today, knownFriends);
+      const { parsed, meta } = await aiParseExpense(ai, text, today, knownFriends, current);
       return { parsed, source: 'llm', latencyMs: meta?.latencyMs, model: meta?.model };
     } catch (e) {
       const reason = e instanceof AiError ? e.message : 'AI unavailable';

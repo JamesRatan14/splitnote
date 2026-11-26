@@ -26,7 +26,7 @@ import { useExpenseSuggestions } from '../../hooks/useExpenseSuggestions';
 import { FillResult, ProgressSheet, ReceiptButton, VoiceMicButton, VoiceResultBanner, VoiceSheet } from '../../components/VoiceCapture';
 import { useAiSettings } from '../../hooks/useAiSettings';
 import { useReceiptScan } from '../../hooks/useReceiptScan';
-import { isAiReady } from '../../utils/ai/client';
+import { DraftForAi, isAiReady } from '../../utils/ai/client';
 import type { ParsedExpense } from '../../utils/ml';
 import { useVoiceInput } from '../../hooks/useVoiceInput';
 import { describeFilled, parseExpense, ParseResult } from '../../utils/parseExpense';
@@ -244,27 +244,46 @@ export default function NewTransactionScreen() {
       ? `via Claude${r.latencyMs ? ` · ${(r.latencyMs / 1000).toFixed(1)}s` : ''}`
       : `offline parser${r.fallbackReason ? ` · ${r.fallbackReason}` : ''}`;
 
-  const voice = useVoiceInput(
-    useCallback(
-      (heard: string) => {
-        const session = voiceSession.current;
-        setVoiceProcessing(true);
-        parseExpense(heard, knownFriends, ai)
-          .then(r => {
-            if (session !== voiceSession.current) return; // cancelled meanwhile
-            setVoiceResult({ heard, ...applyParsed(r.parsed), source: sourceLabel(r) });
-          })
-          .finally(() => {
-            if (session !== voiceSession.current) return;
-            setVoiceProcessing(false);
-            setVoiceOpen(false);
-          });
-      },
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      [knownFriends, ai, applyParsed]
-    ),
-    knownFriends
+  // Snapshot of the form for "edit by voice"; undefined when the form is still empty.
+  const draftRef = useRef<() => DraftForAi | undefined>(() => undefined);
+  draftRef.current = () => {
+    const amountValue = parseFloat(amount);
+    const taxValue = parseFloat(tax);
+    if (!title.trim() && !(amountValue > 0) && participants.length === 0) return undefined;
+    return {
+      title: title.trim() || undefined,
+      amount: amountValue > 0 ? amountValue : undefined,
+      tax: taxValue > 0 ? taxValue : undefined,
+      mode,
+      date,
+      participants,
+      includeMe,
+      note: note.trim() || undefined,
+    };
+  };
+  const currentDraft = () => draftRef.current();
+
+  // What was said (or typed in the fallback box) → Claude (or offline parser) → form
+  const understand = useCallback(
+    (heard: string) => {
+      const session = voiceSession.current;
+      setVoiceProcessing(true);
+      parseExpense(heard, knownFriends, ai, currentDraft())
+        .then(r => {
+          if (session !== voiceSession.current) return; // cancelled meanwhile
+          setVoiceResult({ heard, ...applyParsed(r.parsed), source: sourceLabel(r) });
+        })
+        .finally(() => {
+          if (session !== voiceSession.current) return;
+          setVoiceProcessing(false);
+          setVoiceOpen(false);
+        });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [knownFriends, ai, applyParsed]
   );
+
+  const voice = useVoiceInput(understand, knownFriends);
 
   const openVoice = () => {
     voiceSession.current += 1;
@@ -711,6 +730,7 @@ export default function NewTransactionScreen() {
         onStop={voice.stop}
         onCancel={closeVoice}
         onRetry={voice.start}
+        onTypeSubmit={understand}
       />
 
       <View

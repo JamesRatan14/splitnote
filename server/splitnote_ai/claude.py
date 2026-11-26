@@ -17,7 +17,9 @@ import anthropic
 from pydantic import BaseModel, ValidationError
 
 from .prompts import PARSE_SYSTEM, RECEIPT_SYSTEM
-from .schemas import ExpenseExtraction, ExpenseOut, Meta, ReceiptExtraction
+import json
+
+from .schemas import DraftIn, ExpenseExtraction, ExpenseOut, Meta, ReceiptExtraction
 
 MODEL = os.environ.get("SPLITNOTE_CLAUDE_MODEL", "claude-opus-5-5")
 EFFORT = os.environ.get("SPLITNOTE_CLAUDE_EFFORT", "low")  # extraction is simple; low keeps latency + cost down
@@ -116,12 +118,22 @@ def _call(client: anthropic.Anthropic, system: str, content: list[dict], output:
 # ---------------------------------------------------------------- public entry points
 
 
-def parse_expense(client: anthropic.Anthropic, text: str, today: str, known_friends: list[str]) -> tuple[ExpenseOut, Meta]:
+def parse_expense(
+    client: anthropic.Anthropic,
+    text: str,
+    today: str,
+    known_friends: list[str],
+    current: Optional[DraftIn] = None,
+) -> tuple[ExpenseOut, Meta]:
     weekday = dt.date.fromisoformat(today).strftime("%A")
     friends = ", ".join(_clean_name(n) for n in known_friends[:200] if _clean_name(n)) or "(none yet)"
+    draft = ""
+    if current is not None and (current.title or current.amount or current.participants):
+        draft = f"<current_draft>\n{json.dumps(current.model_dump(exclude_none=True))}\n</current_draft>\n\n"
     user = (
         f"Today: {today} ({weekday})\n"
         f"Known friends: {friends}\n\n"
+        f"{draft}"
         f"<transcript>\n{text.strip()}\n</transcript>"
     )
     parsed, meta = _call(client, PARSE_SYSTEM, [{"type": "text", "text": user}], ExpenseExtraction)

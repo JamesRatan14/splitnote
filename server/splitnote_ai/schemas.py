@@ -72,10 +72,24 @@ class ReceiptExtraction(BaseModel):
 # ---------------------------------------------------------------- API request / response
 
 
+class DraftIn(BaseModel):
+    """What is already in the form, so a voice command can edit it ("make it 50", "add <name>")."""
+
+    title: Optional[str] = Field(default=None, max_length=80)
+    amount: Optional[float] = None
+    tax: Optional[float] = None
+    mode: Optional[PaymentMode] = None
+    date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    participants: list[str] = Field(default_factory=list, max_length=20)
+    includeMe: bool = False
+    note: Optional[str] = Field(default=None, max_length=200)
+
+
 class ParseRequest(BaseModel):
     text: str = Field(min_length=2, max_length=600)
     today: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     known_friends: list[str] = Field(default_factory=list, max_length=200, alias="knownFriends")
+    current: Optional[DraftIn] = None
 
     model_config = {"populate_by_name": True}
 

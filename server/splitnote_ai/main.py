@@ -108,7 +108,7 @@ def auth() -> dict:
 
 @app.post("/parse", response_model=ExpenseResponse, dependencies=[Depends(require_passphrase)])
 def parse(body: ParseRequest, client: anthropic.Anthropic = Depends(get_client)) -> ExpenseResponse:
-    expense, meta = claude.parse_expense(client, body.text, body.today, body.known_friends)
+    expense, meta = claude.parse_expense(client, body.text, body.today, body.known_friends, body.current)
     log.info(json.dumps({"event": "parse", "model": meta.model, "ms": meta.latencyMs,
                          "in": meta.inputTokens, "out": meta.outputTokens, "warnings": meta.warnings}))
     return ExpenseResponse(expense=expense, meta=meta)

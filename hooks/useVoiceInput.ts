@@ -100,9 +100,17 @@ function webSpeechCtor(): WebSpeechCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-function detach(rec: WebSpeechRecognition | null) {
+/**
+ * One recogniser for the whole page (the pattern common web-speech libraries use; iOS Safari can be
+ * unreliable when new recognisers are created repeatedly). If a session fails to start or hears
+ * nothing, the next session gets a fresh instance instead — so whichever way a browser misbehaves,
+ * the following attempt uses the other strategy.
+ */
+let sharedRec: WebSpeechRecognition | null = null;
+let sessionCounter = 0;
+
+function releaseMic(rec: WebSpeechRecognition | null) {
   if (!rec) return;
-  rec.onstart = rec.onresult = rec.onerror = rec.onend = null;
   try {
     rec.abort();
   } catch {
@@ -129,6 +137,10 @@ export function useVoiceInput(onFinal: (text: string) => void, contextualStrings
   const cancelled = useRef(false);
   const finished = useRef(true);
   const webRec = useRef<WebSpeechRecognition | null>(null);
+  /** Web: id of the current session; handlers of other sessions are ignored. */
+  const webSession = useRef(0);
+  /** Web: true once this session's own "start" event arrived (earlier end/error events are stale). */
+  const webStarted = useRef(false);
   /** Native: ignore stray end/error events until this session's own "start" arrives. */
   const nativeStarted = useRef(false);
   const nativeFinals = useRef<string[]>([]);
@@ -149,8 +161,7 @@ export function useVoiceInput(onFinal: (text: string) => void, contextualStrings
 
   const forceOff = () => {
     if (Platform.OS === 'web') {
-      detach(webRec.current);
-      webRec.current = null;
+      releaseMic(webRec.current);
     } else {
       try {
         ExpoSpeechRecognitionModule.abort();
@@ -166,12 +177,13 @@ export function useVoiceInput(onFinal: (text: string) => void, contextualStrings
     finished.current = true;
     clearTimers();
     setListening(false);
+    const heard = text.current.trim();
     if (Platform.OS === 'web') {
-      detach(webRec.current); // make sure the mic is released
-      webRec.current = null;
+      releaseMic(webRec.current); // make sure the mic is released
+      // didn't start, or heard nothing: use a fresh recogniser next time
+      if (!webStarted.current || !heard) sharedRec = null;
     }
     if (cancelled.current) return;
-    const heard = text.current.trim();
     if (heard) onFinalRef.current(heard);
     else setError(prev => prev ?? "Didn't hear anything. Tap the mic and try again.");
   }, []);
@@ -187,6 +199,8 @@ export function useVoiceInput(onFinal: (text: string) => void, contextualStrings
     if (graceTimer.current) clearTimeout(graceTimer.current);
     graceTimer.current = setTimeout(() => {
       forceOff(); // the recogniser ignored stop(): turn the mic off ourselves
+      // it misbehaved, so don't reuse it: late events from it can't reach the next session
+      if (Platform.OS === 'web') sharedRec = null;
       finish();
     }, STOP_GRACE_MS);
   }, [finish]);
@@ -255,36 +269,51 @@ export function useVoiceInput(onFinal: (text: string) => void, contextualStrings
     if (Platform.OS === 'web') {
       const Ctor = webSpeechCtor();
       if (!Ctor) {
-        setError("Voice input isn't available in this browser. You can still use the keyboard's mic in any field.");
+        setError("Voice input isn't available in this browser. Type it below instead.");
         finish();
         return;
       }
-      const rec = new Ctor();
+      const rec = sharedRec ?? new Ctor();
+      sharedRec = rec;
+      const session = ++sessionCounter;
+      webSession.current = session;
+      webStarted.current = false;
       rec.lang = 'en-US';
       rec.continuous = true;
       rec.interimResults = true;
       rec.maxAlternatives = 1;
-      // every handler checks it still belongs to the current session
+      const mine = () => webSession.current === session && webRec.current === rec;
+      rec.onstart = () => {
+        if (mine()) webStarted.current = true;
+      };
       rec.onresult = ev => {
-        if (webRec.current !== rec) return;
+        if (!mine()) return;
+        webStarted.current = true;
         const segments: string[] = [];
         for (let i = 0; i < ev.results.length; i++) segments.push(ev.results[i][0]?.transcript ?? '');
         onHeard(mergeSegments(segments));
       };
       rec.onerror = ev => {
-        if (webRec.current !== rec) return;
+        if (!mine() || !webStarted.current) return; // stale error from an earlier session
         onProblem(ev.error);
       };
       rec.onend = () => {
-        if (webRec.current !== rec) return;
+        if (!mine() || !webStarted.current) return; // stale end from an earlier session
         finish();
       };
       webRec.current = rec;
       try {
         rec.start(); // synchronous, inside the tap
       } catch {
-        setError('The microphone was busy. Tap the mic to try again.');
-        finish();
+        // still running from an earlier session: stop it and start again, still inside the tap
+        try {
+          rec.abort();
+          rec.start();
+        } catch {
+          sharedRec = null;
+          setError('The microphone was busy. Tap the mic again, or type it below.');
+          finish();
+        }
       }
       return;
     }
