@@ -101,7 +101,16 @@ export function useVoiceInput(onFinal: (text: string) => void, contextualStrings
       // ignore — finish() below still runs
     }
     if (graceTimer.current) clearTimeout(graceTimer.current);
-    graceTimer.current = setTimeout(finish, STOP_GRACE_MS);
+    graceTimer.current = setTimeout(() => {
+      // The recogniser ignored stop() (seen in iOS home-screen web apps: the mic indicator stays on).
+      // Force the microphone off, then finish with what was heard.
+      try {
+        ExpoSpeechRecognitionModule.abort();
+      } catch {
+        // ignore
+      }
+      finish();
+    }, STOP_GRACE_MS);
   }, [finish]);
 
   const scheduleSilenceStop = useCallback(

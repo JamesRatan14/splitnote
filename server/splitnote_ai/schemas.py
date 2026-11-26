@@ -42,7 +42,10 @@ class ExpenseExtraction(BaseModel):
     include_me: bool = Field(description="True if the user also shares the cost (e.g. 'split between us', 'both of us').")
     split_type: Literal["equal", "custom"] = Field(description='"custom" only if per-person amounts are stated.')
     custom_amounts: list[CustomShare] = Field(description="Per-friend pre-tax shares when split_type is custom, else [].")
-    note: Optional[str] = Field(description="Useful context not captured in other fields (max ~15 words), else null.")
+    note: Optional[str] = Field(
+        description="Only context the user explicitly stated that fits no other field (max ~15 words). "
+        "Usually null. No guesses, no reasoning, no remarks about the transcript."
+    )
 
 
 class ReceiptItem(BaseModel):
