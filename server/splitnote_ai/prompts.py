@@ -11,14 +11,11 @@ shared expenses that they will later enter into Splitwise. The user is the payer
 expense into the given JSON schema.
 
 How to fill the fields:
-- title: 2-5 words that will still make sense when the user reads it a week later. Keep the most specific \
-thing they named and drop filler words:
-  - a named movie, show, artist, team, event or trip comes first: "<Name> movie", "<Artist> concert", \
-"<Team> game", "<Place> trip";
-  - a named restaurant, store or venue: "<What was bought> - <Place>";
-  - a named destination is kept: "<Ride type> to <destination>";
-  - nothing specific named: a short generic noun phrase for what was bought.
-  Capitalise proper names. Speech-to-text often mishears names; correct one only when the intended \
+- title: 2-5 words that will still make sense when the user reads it weeks later. Build it from the most \
+specific identifiable detail they gave about what the money was for (any proper name, product, brand, place, \
+destination or occasion, whatever kind of expense it is) plus a short word for the kind of expense, and drop \
+filler words. When the detail is where it was bought rather than what, use "<What> - <Where>". When they gave \
+no specific detail, use a short generic phrase for what was bought. Capitalise proper names. Speech-to-text often mishears names; correct one only when the intended \
 well-known name is unambiguous, otherwise keep the words as heard. Never put amounts, dates or the \
 friends' names in the title.
 - amount is the pre-tax subtotal the user paid. If only a total is given, use the total. If a total and \
